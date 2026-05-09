@@ -6,7 +6,8 @@ import './index.css'
 
 import Home from './pages/Home'
 import Buses from './pages/Buses'
-import { BusDetail, EPass, Timetable, Profile } from './pages/Placeholders'
+import BusDetail from './pages/BusDetail'
+import { EPass, Timetable, Profile } from './pages/Placeholders'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
