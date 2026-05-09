@@ -5,7 +5,8 @@ import { LanguageProvider } from './i18n/LanguageContext'
 import './index.css'
 
 import Home from './pages/Home'
-import { Buses, BusDetail, EPass, Timetable, Profile } from './pages/Placeholders'
+import Buses from './pages/Buses'
+import { BusDetail, EPass, Timetable, Profile } from './pages/Placeholders'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
