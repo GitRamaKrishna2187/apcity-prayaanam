@@ -147,11 +147,11 @@ export default function Buses() {
   // Initial fetch
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Live refresh every 10 seconds
+  // Live refresh every 25 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       fetchData()
-    }, 10000)
+    }, 25000)
     return () => clearInterval(interval)
   }, [fetchData])
 
