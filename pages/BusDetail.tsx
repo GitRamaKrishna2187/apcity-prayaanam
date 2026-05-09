@@ -138,9 +138,9 @@ export default function BusDetail() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  // Live refresh every 10 seconds
+  // Live refresh every 25 seconds
   useEffect(() => {
-    const iv = setInterval(fetchData, 10000)
+    const iv = setInterval(fetchData, 25000)
     return () => clearInterval(iv)
   }, [fetchData])
 
