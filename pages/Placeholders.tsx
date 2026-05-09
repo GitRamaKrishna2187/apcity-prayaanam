@@ -17,7 +17,7 @@ function Placeholder({ title, next }: { title: string, next?: string }) {
             {title} — coming in Session {next}
           </div>
           <div style={{fontSize:13,color:'var(--mute)'}}>
-            This screen will be fully built in the upcoming session. The database and routes are already set up.
+            This screen will be fully built in the upcoming session.
           </div>
           <button className="btn-primary" style={{marginTop:14}} onClick={()=>nav('/')}>← Back to Home</button>
         </div>
@@ -26,10 +26,7 @@ function Placeholder({ title, next }: { title: string, next?: string }) {
   )
 }
 
-export function Buses()     { return <Placeholder title="Select Bus"  next="3" /> }
 export function BusDetail() { return <Placeholder title="Bus Detail"  next="4" /> }
 export function EPass()     { return <Placeholder title="ePass"       next="5" /> }
 export function Timetable() { return <Placeholder title="Timetable"   next="6" /> }
 export function Profile()   { return <Placeholder title="Profile"     next="later" /> }
-
-export default Buses
