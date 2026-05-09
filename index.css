@@ -1,0 +1,287 @@
+:root {
+  --blue:   #1B3A6B;
+  --teal:   #0F6E56;
+  --gold:   #F5A623;
+  --red:    #C0392B;
+  --green:  #1A7A4A;
+  --light:  #EBF2FF;
+  --gray:   #F4F6FA;
+  --text:   #1C2B4A;
+  --mute:   #7A8BA6;
+  --white:  #FFFFFF;
+  --shadow: 0 2px 16px rgba(13,43,94,0.10);
+  --shadow-lg: 0 8px 32px rgba(13,43,94,0.15);
+  --radius: 12px;
+}
+
+/* Phone shell */
+.phone-shell {
+  width: 100%;
+  max-width: 390px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: var(--gray);
+  position: relative;
+  overflow-x: hidden;
+  box-shadow: 0 0 40px rgba(0,0,0,0.2);
+}
+
+/* Status bar */
+.status-bar {
+  background: var(--blue);
+  padding: 10px 20px 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.status-bar span { color: rgba(255,255,255,0.85); font-size: 11px; font-weight: 500; }
+
+/* App header */
+.app-header {
+  background: var(--blue);
+  padding: 0 16px 16px;
+  position: relative;
+}
+.header-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+}
+.app-logo {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--white);
+  letter-spacing: 1px;
+}
+.app-logo span { color: var(--gold); }
+.app-sub {
+  font-family: 'Noto Sans Telugu', sans-serif;
+  font-size: 11px;
+  color: rgba(255,255,255,0.6);
+  display: block;
+  margin-top: -2px;
+}
+.header-actions { display: flex; gap: 8px; align-items: center; }
+.icon-btn {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.12);
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: white;
+  font-size: 16px;
+  transition: background 0.2s;
+}
+.icon-btn:hover { background: rgba(255,255,255,0.2); }
+
+/* APSRTC watermark */
+.apsrtc-watermark {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  color: rgba(255,255,255,0.2);
+  letter-spacing: 1px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Scrollable content */
+.scrollable {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 80px;
+}
+.scrollable::-webkit-scrollbar { width: 3px; }
+.scrollable::-webkit-scrollbar-thumb { background: #D1DCF0; border-radius: 2px; }
+
+/* Bottom navigation */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 390px;
+  background: var(--white);
+  border-top: 1px solid #EEF2F8;
+  display: flex;
+  padding: 8px 0 max(12px, env(safe-area-inset-bottom));
+  z-index: 100;
+  box-shadow: 0 -4px 20px rgba(13,43,94,0.08);
+}
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  padding: 4px 0;
+  border: none;
+  background: none;
+}
+.nav-icon { font-size: 20px; }
+.nav-label { font-size: 10px; font-weight: 500; color: var(--mute); }
+.nav-item.active .nav-label { color: var(--blue); }
+.nav-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--blue); }
+
+/* Cards */
+.card {
+  background: var(--white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+/* Pills */
+.pill {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 20px;
+}
+.pill-green  { background: #E8F5E9; color: var(--green); }
+.pill-amber  { background: #FFF3E0; color: #E65100; }
+.pill-red    { background: #FDECEA; color: var(--red); }
+.pill-gray   { background: #F3F4F6; color: var(--mute); }
+.pill-blue   { background: var(--light); color: var(--blue); }
+
+/* Live dot */
+.live-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #4CAF50;
+  margin-right: 4px;
+  animation: blink 1.5s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+/* Occupancy bar */
+.occ-bar-track {
+  height: 6px;
+  background: #E2E8F0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.occ-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.occ-low  { background: var(--green); }
+.occ-mid  { background: var(--gold); }
+.occ-high { background: var(--red); }
+
+/* Form elements */
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  background: white;
+  transition: border-color 0.2s;
+}
+.form-input:focus { border-color: var(--blue); }
+.form-input::placeholder { color: var(--mute); }
+
+select.form-input { cursor: pointer; appearance: auto; }
+
+.form-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mute);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  display: block;
+  margin-bottom: 5px;
+}
+
+/* Primary buttons */
+.btn-primary {
+  width: 100%;
+  padding: 13px;
+  background: var(--blue);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: background 0.2s, transform 0.1s;
+}
+.btn-primary:active { transform: scale(0.98); background: #0a2149; }
+
+.btn-teal {
+  width: 100%;
+  padding: 13px;
+  background: var(--teal);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+}
+
+/* Screen animations */
+.screen-enter {
+  animation: fadeUp 0.2s ease;
+}
+@keyframes fadeUp {
+  from { opacity:0; transform: translateY(10px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+
+/* Language selector modal */
+.lang-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.lang-modal {
+  background: white;
+  border-radius: 20px 20px 0 0;
+  padding: 20px 20px max(20px, env(safe-area-inset-bottom));
+  width: 100%;
+  max-width: 390px;
+}
+.lang-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  border: 1.5px solid #E2E8F0;
+  transition: all 0.15s;
+}
+.lang-option.selected {
+  border-color: var(--blue);
+  background: var(--light);
+}
+.lang-flag { font-size: 24px; }
+.lang-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.lang-native { font-size: 13px; color: var(--mute); }
