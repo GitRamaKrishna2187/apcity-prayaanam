@@ -1,5 +1,3 @@
-// src/pages/Home.tsx
-// PLACEHOLDER — will be fully built in Session 2
 import { useLang } from '../i18n/LanguageContext'
 import { useNavigate } from 'react-router-dom'
 
@@ -21,7 +19,9 @@ export default function Home() {
         </div>
         <div style={{background:'white',borderRadius:12,padding:16}}>
           <div style={{marginBottom:10,fontSize:14,color:'#7A8BA6'}}>Session 1 complete ✓</div>
-          <div style={{marginBottom:10,fontSize:13,color:'#1C2B4A',fontWeight:600}}>Database connected. Home screen coming in Session 2.</div>
+          <div style={{marginBottom:10,fontSize:13,color:'#1C2B4A',fontWeight:600}}>
+            Database connected. Home screen coming in Session 2.
+          </div>
           <button className="btn-primary" onClick={()=>nav('/buses')}>
             Try Bus Search →
           </button>
@@ -30,7 +30,9 @@ export default function Home() {
       </div>
       <div style={{padding:16}}>
         <div style={{background:'white',borderRadius:12,padding:14,marginBottom:12,boxShadow:'var(--shadow)'}}>
-          <div style={{fontSize:12,fontWeight:600,color:'var(--mute)',marginBottom:8,textTransform:'uppercase'}}>Setup Status</div>
+          <div style={{fontSize:12,fontWeight:600,color:'var(--mute)',marginBottom:8,textTransform:'uppercase'}}>
+            Setup Status
+          </div>
           <div style={{fontSize:13,color:'var(--text)',marginBottom:4}}>✅ React app — running</div>
           <div style={{fontSize:13,color:'var(--text)',marginBottom:4}}>✅ Supabase — connected</div>
           <div style={{fontSize:13,color:'var(--text)',marginBottom:4}}>✅ Vercel — deployed</div>
