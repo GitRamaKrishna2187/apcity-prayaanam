@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { useLang } from './i18n/LanguageContext'
-import { supabase } from './lib/supabase'
+import { useLang } from '../i18n/LanguageContext'
+import { supabase } from '../lib/supabase'
 
 interface BusRow {
   id: string
