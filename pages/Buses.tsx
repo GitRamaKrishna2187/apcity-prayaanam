@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
-
+import StatusBar from './StatusBar'
 interface BusRow {
   id: string
   registration: string
@@ -184,10 +184,7 @@ export default function Buses() {
   return (
     <div className="phone-shell">
       {/* STATUS BAR */}
-      <div className="status-bar">
-        <span>9:41 AM</span>
-        <span>APSRTC APCityPrayaanam • 4G</span>
-      </div>
+      <StatusBar />
 
       {/* HEADER */}
       <div style={{ background: 'var(--blue)', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
