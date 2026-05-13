@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
 import type { Language } from '../i18n/LanguageContext'
+import StatusBar from './StatusBar'
 
 interface Stop { stop_name: string; city: string }
 interface Announcement { id: string; message: string; type: string }
@@ -100,11 +101,7 @@ export default function Home() {
 
   return (
     <div className="phone-shell">
-      <div className="status-bar">
-        <span>9:41 AM</span>
-        <span>APSRTC APCityPrayaanam • 4G</span>
-      </div>
-
+      <StatusBar />
       <div className="app-header">
         <div className="header-top">
           <div>
