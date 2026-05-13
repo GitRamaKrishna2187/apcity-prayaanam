@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
+import StatusBar from './StatusBar'
 
 interface Stop {
   id: string
@@ -137,14 +138,14 @@ export default function BusDetail() {
 
   if (loading) return (
     <div className="phone-shell">
-      <div className="status-bar"><span>9:41 AM</span><span>Loading...</span></div>
+       <StatusBar />
       <div style={{ textAlign: 'center', padding: 60, color: 'var(--mute)' }}>Loading route...</div>
     </div>
   )
 
   if (!route) return (
     <div className="phone-shell">
-      <div className="status-bar"><span>9:41 AM</span><span>Not found</span></div>
+    <StatusBar />
       <div style={{ padding: 24 }}>
         <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Route not found</div>
         <button className="btn-primary" onClick={() => nav(-1)}>← Go Back</button>
@@ -177,7 +178,7 @@ export default function BusDetail() {
   return (
     <div className="phone-shell">
       <div className="status-bar">
-        <span>9:41 AM</span>
+      <StatusBar />
         <span>APSRTC APCityPrayaanam • 4G</span>
       </div>
 
