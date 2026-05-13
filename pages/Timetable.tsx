@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
-
+import StatusBar from './StatusBar'
 interface Route {
   route_no: string
   route_name: string
@@ -105,7 +105,7 @@ export default function Timetable() {
     return (
       <div className="phone-shell">
         <div className="status-bar">
-          <span>9:41 AM</span><span>APSRTC APCityPrayaanam • 4G</span>
+         <StatusBar />
         </div>
 
         {/* Header */}
@@ -246,7 +246,7 @@ export default function Timetable() {
   return (
     <div className="phone-shell">
       <div className="status-bar">
-        <span>9:41 AM</span><span>APSRTC APCityPrayaanam • 4G</span>
+       <StatusBar />
       </div>
 
       {/* Header */}
