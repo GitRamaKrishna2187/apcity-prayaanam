@@ -196,17 +196,17 @@ export default function Home() {
                   </div>
                 )}
               </div>
-
-              {/* Date chips */}
-              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                {[{ icon: '📅', label: t('today') }, { icon: '🕐', label: t('anyTime') }, { icon: '👤', label: t('passenger') }].map((c, i) => (
-                  <div key={i} style={{
-                    flex: 1, padding: '7px 6px', border: `1.5px solid ${i === 0 ? 'var(--blue)' : '#E2E8F0'}`,
-                    borderRadius: 8, fontSize: 11, color: i === 0 ? 'var(--blue)' : 'var(--mute)',
-                    display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontWeight: i === 0 ? 500 : 400,
-                  }}>
-                    {c.icon} {c.label}
-                  </div>
+                 {/* Date chip */}
+<div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+  <div style={{
+    padding: '7px 12px', border: '1.5px solid var(--blue)',
+    borderRadius: 8, fontSize: 11, color: 'var(--blue)',
+    display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontWeight: 500,
+  }}>
+    📅 {t('today')}
+  </div>
+</div>
+            
                 ))}
               </div>
             </>
