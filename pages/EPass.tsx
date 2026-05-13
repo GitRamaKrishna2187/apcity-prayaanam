@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
-
+import StatusBar from './StatusBar'
 // ── Types ────────────────────────────────────────────────────────────────────
 interface EPass {
   id: string
@@ -212,7 +212,7 @@ export default function EPass() {
   // ── RENDER: Loading ─────────────────────────────────────────────────────────
   if (loading) return (
     <div className="phone-shell">
-      <div className="status-bar"><span>9:41 AM</span><span>APSRTC APCityPrayaanam</span></div>
+     <StatusBar />
       <div style={{ textAlign: 'center', padding: 60, color: 'var(--mute)' }}>Loading ePass...</div>
     </div>
   )
@@ -227,7 +227,7 @@ export default function EPass() {
     })
     return (
       <div className="phone-shell">
-        <div className="status-bar"><span>9:41 AM</span><span>APSRTC APCityPrayaanam</span></div>
+       <StatusBar />
         <div style={{ background: 'var(--blue)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={() => setStep('view')} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: 16, cursor: 'pointer' }}>←</button>
           <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 17, fontWeight: 700, color: 'white' }}>Your ePass</div>
@@ -352,7 +352,7 @@ export default function EPass() {
   if (step === 'otp') {
     return (
       <div className="phone-shell">
-        <div className="status-bar"><span>9:41 AM</span><span>APSRTC APCityPrayaanam</span></div>
+        <StatusBar />
         <div style={{ background: 'var(--blue)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={() => setStep('form')} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: 16, cursor: 'pointer' }}>←</button>
           <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 17, fontWeight: 700, color: 'white' }}>Verify Aadhaar</div>
@@ -419,7 +419,7 @@ export default function EPass() {
   if (step === 'form') {
     return (
       <div className="phone-shell">
-        <div className="status-bar"><span>9:41 AM</span><span>APSRTC APCityPrayaanam</span></div>
+        <StatusBar />
         <div style={{ background: 'var(--blue)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
           <button onClick={() => setStep('view')} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: 16, cursor: 'pointer' }}>←</button>
           <div>
@@ -555,7 +555,7 @@ export default function EPass() {
   return (
     <div className="phone-shell">
       <div className="status-bar">
-        <span>9:41 AM</span>
+        <StatusBar />
         <span>APSRTC APCityPrayaanam • 4G</span>
       </div>
 
