@@ -177,11 +177,7 @@ export default function BusDetail() {
 
   return (
     <div className="phone-shell">
-      <div className="status-bar">
       <StatusBar />
-        <span>APSRTC APCityPrayaanam • 4G</span>
-      </div>
-
       {/* HEADER */}
       <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
