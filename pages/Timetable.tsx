@@ -1,424 +1,281 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
 import StatusBar from './StatusBar'
-interface Route {
+
+interface RouteRow {
   route_no: string
-  route_name: string
   from_stop: string
   to_stop: string
   bus_type: string
-  ac: boolean
-  depot: string
-  capacity: number
-  fleet_size: number
   distance_km: number
   duration_mins: number
-  first_departure: string
-  last_departure: string
+  depot: string
 }
 
-interface TimetableRow {
-  id: string
+interface TimetableSlot {
   route_no: string
   departure_time: string
   arrival_time: string
   days_of_operation: string
 }
 
-const BUS_TYPE_LABELS: Record<string, string> = {
-  city_ordinary: 'City Ordinary',
-  metro_express: 'Metro Express',
-  metro_luxury: 'Metro Luxury',
+function nowISTMins(): number {
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+  return ist.getHours() * 60 + ist.getMinutes()
 }
-
-const BUS_TYPE_COLORS: Record<string, { bg: string; color: string }> = {
-  city_ordinary: { bg: '#EBF2FF', color: '#1B3A6B' },
-  metro_express: { bg: '#FFF8E1', color: '#854F0B' },
-  metro_luxury:  { bg: '#E8F5E9', color: '#1A7A4A' },
+function toMins(t: string): number {
+  if (!t) return 0
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
 }
-
-function minsToHHMM(mins: number) {
-  const h = Math.floor(mins / 60)
-  const m = mins % 60
-  return h > 0 ? `${h}h ${m}m` : `${m} min`
+function fmt(t: string): string {
+  if (!t) return '--'
+  const [h, m] = t.split(':').map(Number)
+  return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
+function countdown(dep: string): string {
+  const diff = toMins(dep) - nowISTMins()
+  if (diff < 0) return 'Departed'
+  if (diff === 0) return 'Now'
+  if (diff < 60) return `${diff} min`
+  return `${Math.floor(diff/60)}h ${diff%60}m`
+}
+function formatDur(m: number) {
+  const h = Math.floor(m/60), r = m%60
+  return h === 0 ? `${r} min` : r > 0 ? `${h}h ${r}min` : `${h}h`
+}
+const BT: Record<string,string> = { city_ordinary:'City Ordinary', metro_express:'Metro Express', metro_luxury:'Metro Luxury' }
 
 export default function Timetable() {
   const { t } = useLang()
   const nav = useNavigate()
 
-  const [routes, setRoutes]         = useState<Route[]>([])
-  const [schedule, setSchedule]     = useState<TimetableRow[]>([])
-  const [loading, setLoading]       = useState(true)
+  const [routes, setRoutes]         = useState<RouteRow[]>([])
+  const [slots, setSlots]           = useState<TimetableSlot[]>([])
+  const [selRoute, setSelRoute]     = useState('')
   const [search, setSearch]         = useState('')
-  const [typeFilter, setTypeFilter] = useState('all')
-  const [depotFilter, setDepotFilter] = useState('all')
-  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null)
-  const [depots, setDepots]         = useState<string[]>([])
+  const [loading, setLoading]       = useState(true)
+  const [sloading, setSloading]     = useState(false)
+  const [showAll, setShowAll]       = useState(false)
+  const [tick, setTick]             = useState(0)
 
   useEffect(() => {
-    async function load() {
-      const { data: rData } = await supabase
-        .from('routes')
-        .select('*')
-        .order('route_no', { ascending: true })
-
-      const { data: sData } = await supabase
-        .from('timetable')
-        .select('*')
-        .order('departure_time', { ascending: true })
-
-      if (rData) {
-        setRoutes(rData)
-        const uniqueDepots = [...new Set(rData.map(r => r.depot))].sort()
-        setDepots(uniqueDepots)
-      }
-      if (sData) setSchedule(sData)
-      setLoading(false)
-    }
-    load()
+    const iv = setInterval(() => setTick(x => x+1), 30000)
+    return () => clearInterval(iv)
   }, [])
 
-  // Filter routes
+  useEffect(() => {
+    supabase.from('routes')
+      .select('route_no,from_stop,to_stop,bus_type,distance_km,duration_mins,depot')
+      .order('route_no', { ascending: true }).limit(200)
+      .then(({ data }) => { if (data) setRoutes(data); setLoading(false) })
+  }, [])
+
+  const fetchSlots = useCallback(async (rno: string) => {
+    setSloading(true); setShowAll(false)
+    const { data: tt } = await supabase.from('timetable')
+      .select('route_no,departure_time,arrival_time,days_of_operation')
+      .eq('route_no', rno).order('departure_time', { ascending: true })
+    if (tt && tt.length > 0) { setSlots(tt); setSloading(false); return }
+    const { data: bd } = await supabase.from('buses')
+      .select('departure_time,arrival_time,route_no')
+      .eq('route_no', rno).order('departure_time', { ascending: true })
+    setSlots((bd||[]).map(b => ({ route_no: rno, departure_time: b.departure_time, arrival_time: b.arrival_time, days_of_operation: 'Daily' })))
+    setSloading(false)
+  }, [])
+
+  useEffect(() => { if (selRoute) fetchSlots(selRoute) }, [selRoute, fetchSlots])
+
+  const now = nowISTMins()
   const filtered = routes.filter(r => {
+    if (!search) return true
     const q = search.toLowerCase()
-    const matchSearch = !q ||
-      r.route_no.toLowerCase().includes(q) ||
-      r.from_stop.toLowerCase().includes(q) ||
-      r.to_stop.toLowerCase().includes(q) ||
-      r.depot.toLowerCase().includes(q)
-    const matchType  = typeFilter === 'all' || r.bus_type === typeFilter
-    const matchDepot = depotFilter === 'all' || r.depot === depotFilter
-    return matchSearch && matchType && matchDepot
+    return r.route_no.toLowerCase().includes(q) || r.from_stop.toLowerCase().includes(q) || r.to_stop.toLowerCase().includes(q)
   })
+  const selR = routes.find(r => r.route_no === selRoute)
+  const upcoming = slots.filter(s => toMins(s.departure_time) >= now - 5)
+  const past     = slots.filter(s => toMins(s.departure_time) < now - 5)
+  const display  = showAll ? slots : upcoming.slice(0, 15)
+  const nextBus  = slots.find(s => toMins(s.departure_time) >= now)
 
-  // Get schedule for selected route
-  const routeSchedule = selectedRoute
-    ? schedule.filter(s => s.route_no === selectedRoute.route_no)
-    : []
-
-  // ── Schedule Detail View ────────────────────────────────────────────────────
-  if (selectedRoute) {
-    const colors = BUS_TYPE_COLORS[selectedRoute.bus_type] || BUS_TYPE_COLORS.city_ordinary
-    return (
-      <div className="phone-shell">
-        <div className="status-bar">
-         <StatusBar />
-        </div>
-
-        {/* Header */}
-        <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <button onClick={() => setSelectedRoute(null)} style={{
-              width: 30, height: 30, borderRadius: '50%',
-              background: 'rgba(255,255,255,0.15)', border: 'none',
-              color: 'white', fontSize: 16, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>←</button>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 22, fontWeight: 700, color: 'white' }}>
-                Route {selectedRoute.route_no}
-              </div>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>
-                {selectedRoute.from_stop} → {selectedRoute.to_stop}
-              </div>
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ ...colors, fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
-              {BUS_TYPE_LABELS[selectedRoute.bus_type]}
-            </div>
-            <div style={{ background: 'var(--light)', color: 'var(--blue)', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
-              🏭 {selectedRoute.depot}
-            </div>
-            <div style={{ background: '#E8F5E9', color: '#1A7A4A', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
-              {minsToHHMM(selectedRoute.duration_mins)}
-            </div>
-            <div style={{ background: '#F3F4F6', color: 'var(--mute)', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
-              {selectedRoute.distance_km} km
-            </div>
-          </div>
-        </div>
-
-        <div className="scrollable">
-
-          {/* Route summary card */}
-          <div style={{ background: 'white', margin: 14, borderRadius: 12, padding: 14, boxShadow: 'var(--shadow)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {[
-                { label: 'Fleet Size',       value: `${selectedRoute.fleet_size} buses` },
-                { label: 'Capacity',         value: `${selectedRoute.capacity} seats` },
-                { label: 'First Departure',  value: selectedRoute.first_departure },
-                { label: 'Last Departure',   value: selectedRoute.last_departure },
-                { label: 'AC Service',       value: selectedRoute.ac ? '✓ Yes' : '✗ No' },
-                { label: 'Daily Trips',      value: `${routeSchedule.length} trips` },
-              ].map((item, i) => (
-                <div key={i} style={{ padding: '8px 10px', background: 'var(--gray)', borderRadius: 8 }}>
-                  <div style={{ fontSize: 10, color: 'var(--mute)', marginBottom: 2 }}>{item.label}</div>
-                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{item.value}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Quick action */}
-          <div style={{ padding: '0 14px 14px' }}>
-            <button className="btn-primary"
-              onClick={() => nav(`/bus/${selectedRoute.route_no}`)}>
-              🚌 Track This Bus Live
-            </button>
-          </div>
-
-          {/* Full timetable */}
-          <div style={{ background: 'white', margin: '0 14px 14px', borderRadius: 12, overflow: 'hidden', boxShadow: 'var(--shadow)' }}>
-            <div style={{ padding: '12px 14px', borderBottom: '1px solid #F0F4FA', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Full Daily Schedule
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--blue)' }}>
-                {routeSchedule.length} trips
-              </div>
-            </div>
-
-            {/* Table header */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr', background: 'var(--blue)', padding: '8px 14px' }}>
-              {['Departure', 'Arrival', 'Days'].map((h, i) => (
-                <div key={i} style={{ fontSize: 11, fontWeight: 600, color: 'white' }}>{h}</div>
-              ))}
-            </div>
-
-            {routeSchedule.length === 0 ? (
-              <div style={{ padding: 20, textAlign: 'center', color: 'var(--mute)', fontSize: 13 }}>
-                Schedule data coming soon
-              </div>
-            ) : (
-              routeSchedule.map((trip, i) => {
-                const now = new Date()
-                const [h, m] = trip.departure_time.split(':').map(Number)
-                const depTime = new Date()
-                depTime.setHours(h, m, 0, 0)
-                const isPast = depTime < now
-                const isNext = !isPast && routeSchedule.slice(0, i).every(t => {
-                  const [th, tm] = t.departure_time.split(':').map(Number)
-                  const td = new Date(); td.setHours(th, tm, 0, 0)
-                  return td < now
-                })
-
-                return (
-                  <div key={trip.id} style={{
-                    display: 'grid', gridTemplateColumns: '1fr 1fr 1.5fr',
-                    padding: '10px 14px',
-                    background: isNext ? '#EBF2FF' : i % 2 === 0 ? 'white' : 'var(--gray)',
-                    borderBottom: '1px solid #F0F4FA',
-                    borderLeft: isNext ? '3px solid var(--blue)' : '3px solid transparent',
-                  }}>
-                    <div style={{
-                      fontFamily: 'Rajdhani,sans-serif', fontSize: 16, fontWeight: 700,
-                      color: isPast ? 'var(--mute)' : isNext ? 'var(--blue)' : 'var(--text)',
-                    }}>
-                      {trip.departure_time}
-                      {isNext && <span style={{ fontSize: 9, background: 'var(--blue)', color: 'white', padding: '1px 5px', borderRadius: 8, marginLeft: 4, fontFamily: 'Inter,sans-serif', fontWeight: 700 }}>NEXT</span>}
-                    </div>
-                    <div style={{
-                      fontFamily: 'Rajdhani,sans-serif', fontSize: 16, fontWeight: 600,
-                      color: isPast ? 'var(--mute)' : 'var(--text)',
-                    }}>
-                      {trip.arrival_time}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--mute)', alignSelf: 'center' }}>
-                      {trip.days_of_operation}
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </div>
-
-          <div style={{ height: 20 }} />
-        </div>
-      </div>
-    )
-  }
-
-  // ── Main Timetable List View ────────────────────────────────────────────────
   return (
-    <div className="phone-shell">
-      <div className="status-bar">
-       <StatusBar />
-      </div>
+    <div className="phone-shell screen-enter">
+      <StatusBar />
 
-      {/* Header */}
-      <div style={{ background: 'var(--blue)', padding: '12px 16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <button onClick={() => nav('/')} style={{
-            width: 30, height: 30, borderRadius: '50%',
-            background: 'rgba(255,255,255,0.15)', border: 'none',
-            color: 'white', fontSize: 16, cursor: 'pointer',
-          }}>←</button>
+      <div style={{ background: 'var(--blue)', padding: '12px 16px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <button onClick={() => nav('/')} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>←</button>
           <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 17, fontWeight: 700, color: 'white' }}>
-              {t('timetable')}
-            </div>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
-              {filtered.length} routes · Visakhapatnam
-            </div>
+            <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: 700, color: 'white' }}>⏰ {t('timetable')}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>{routes.length} routes · Visakhapatnam</div>
           </div>
         </div>
-
-        {/* Search bar */}
-        <input
-          className="form-input"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search route number, stop or depot..."
-          style={{ background: 'rgba(255,255,255,0.95)', marginBottom: 8 }}
-        />
-
-        {/* Filter chips */}
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 2 }}>
-          <select
-            value={typeFilter}
-            onChange={e => setTypeFilter(e.target.value)}
-            style={{
-              padding: '5px 10px', borderRadius: 20, border: 'none',
-              background: 'rgba(255,255,255,0.15)', color: 'white',
-              fontSize: 11, fontWeight: 600, cursor: 'pointer',
-            }}>
-            <option value="all" style={{ color: 'var(--text)' }}>All Types</option>
-            <option value="city_ordinary" style={{ color: 'var(--text)' }}>City Ordinary</option>
-            <option value="metro_express" style={{ color: 'var(--text)' }}>Metro Express</option>
-            <option value="metro_luxury" style={{ color: 'var(--text)' }}>Metro Luxury</option>
-          </select>
-
-          <select
-            value={depotFilter}
-            onChange={e => setDepotFilter(e.target.value)}
-            style={{
-              padding: '5px 10px', borderRadius: 20, border: 'none',
-              background: 'rgba(255,255,255,0.15)', color: 'white',
-              fontSize: 11, fontWeight: 600, cursor: 'pointer', flex: 1,
-            }}>
-            <option value="all" style={{ color: 'var(--text)' }}>All Depots</option>
-            {depots.map(d => (
-              <option key={d} value={d} style={{ color: 'var(--text)' }}>{d}</option>
-            ))}
-          </select>
-        </div>
+        <input type="text" placeholder="Search route number or stop name..." value={search}
+          onChange={e => { setSearch(e.target.value); setSelRoute('') }}
+          style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', fontSize: 13, color: 'var(--text)', outline: 'none', boxSizing: 'border-box' as const }} />
       </div>
 
-      {/* Route list */}
-      <div className="scrollable">
+      <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 150px)' }}>
 
-        {loading && (
-          <div style={{ textAlign: 'center', padding: 40, color: 'var(--mute)', fontSize: 14 }}>
-            Loading timetable...
-          </div>
+        {/* Route list */}
+        {!selRoute && (
+          <>
+            {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--mute)' }}>Loading routes...</div>}
+            {!loading && filtered.length === 0 && (
+              <div style={{ textAlign: 'center', padding: 40 }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🔍</div>
+                <div style={{ fontSize: 14, color: 'var(--mute)' }}>No routes found for "{search}"</div>
+              </div>
+            )}
+            {!loading && filtered.length > 0 && (
+              <>
+                <div style={{ padding: '12px 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>
+                  {search ? `${filtered.length} routes found` : 'Tap a route to view schedule'}
+                </div>
+                <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {filtered.map(r => (
+                    <button key={r.route_no} onClick={() => setSelRoute(r.route_no)}
+                      style={{ background: 'white', borderRadius: 12, padding: '12px 14px', boxShadow: 'var(--shadow)', border: '1.5px solid #EEF2F8', cursor: 'pointer', textAlign: 'left' as const, width: '100%', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ background: 'var(--blue)', color: 'white', fontFamily: 'Rajdhani,sans-serif', fontSize: 14, fontWeight: 700, padding: '3px 10px', borderRadius: 8, minWidth: 52, textAlign: 'center' as const, flexShrink: 0 }}>{r.route_no}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.from_stop} → {r.to_stop}</div>
+                        <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>{BT[r.bus_type]} · {r.distance_km}km · {formatDur(r.duration_mins)}</div>
+                      </div>
+                      <span style={{ fontSize: 16, color: 'var(--blue)' }}>›</span>
+                    </button>
+                  ))}
+                </div>
+                <div style={{ height: 20 }} />
+              </>
+            )}
+          </>
         )}
 
-        {!loading && filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40 }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>⏰</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>No routes found</div>
-            <div style={{ fontSize: 13, color: 'var(--mute)' }}>Try a different search or filter</div>
-          </div>
-        )}
-
-        {!loading && filtered.map((route, idx) => {
-          const colors = BUS_TYPE_COLORS[route.bus_type] || BUS_TYPE_COLORS.city_ordinary
-          const tripCount = schedule.filter(s => s.route_no === route.route_no).length
-
-          return (
-            <div key={route.route_no}
-              onClick={() => setSelectedRoute(route)}
-              style={{
-                background: 'white', margin: idx === 0 ? '12px 14px 8px' : '0 14px 8px',
-                borderRadius: 12, boxShadow: 'var(--shadow)',
-                overflow: 'hidden', cursor: 'pointer',
-                border: '1.5px solid transparent', transition: 'border-color 0.2s',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--blue)')}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}>
-
-              {/* Card top */}
-              <div style={{ padding: '12px 14px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
-                {/* Route number */}
-                <div style={{
-                  background: 'var(--blue)', color: 'white',
-                  fontFamily: 'Rajdhani,sans-serif', fontSize: 16, fontWeight: 700,
-                  padding: '4px 10px', borderRadius: 8, minWidth: 52, textAlign: 'center',
-                  flexShrink: 0,
-                }}>{route.route_no}</div>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {route.from_stop} → {route.to_stop}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>
-                    🏭 {route.depot}
-                  </div>
+        {/* Timetable for selected route */}
+        {selRoute && (
+          <>
+            {/* Route card */}
+            <div style={{ margin: '12px 14px 0', background: 'white', borderRadius: 12, padding: 14, boxShadow: 'var(--shadow)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: nextBus ? 12 : 0 }}>
+                <div style={{ background: 'var(--blue)', color: 'white', fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700, padding: '3px 12px', borderRadius: 8 }}>{selRoute}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{selR?.from_stop} → {selR?.to_stop}</div>
+                  <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 1 }}>{selR && BT[selR.bus_type]} · {selR?.distance_km}km · {selR && formatDur(selR.duration_mins)}</div>
                 </div>
-
-                <div style={{ ...colors, fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20, flexShrink: 0 }}>
-                  {BUS_TYPE_LABELS[route.bus_type]}
-                </div>
+                <button onClick={() => { setSelRoute(''); setSlots([]) }}
+                  style={{ background: '#F4F6FA', border: 'none', borderRadius: 8, padding: '5px 10px', fontSize: 12, color: 'var(--mute)', fontWeight: 600, cursor: 'pointer' }}>✕</button>
               </div>
 
-              {/* Card bottom */}
-              <div style={{ padding: '8px 14px 10px', background: 'var(--gray)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: 16 }}>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--mute)' }}>First bus</div>
-                    <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
-                      {route.first_departure}
-                    </div>
+              {/* Next bus highlight */}
+              {nextBus && (
+                <div style={{ background: 'linear-gradient(135deg,var(--blue),#1A4A9A)', borderRadius: 10, padding: '12px 14px', color: 'white' }}>
+                  <div style={{ fontSize: 10, opacity: 0.7, textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 4 }}>
+                    {toMins(nextBus.departure_time) <= now && now <= toMins(nextBus.arrival_time) ? '🚌 Currently running' : 'Next bus'}
                   </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--mute)' }}>Last bus</div>
-                    <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>
-                      {route.last_departure}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 28, fontWeight: 700 }}>{fmt(nextBus.departure_time)}</div>
+                      <div style={{ fontSize: 11, opacity: 0.7 }}>Arrives {fmt(nextBus.arrival_time)} · {nextBus.days_of_operation}</div>
                     </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 10, color: 'var(--mute)' }}>Trips/day</div>
-                    <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, color: 'var(--blue)' }}>
-                      {tripCount || route.fleet_size * 3}
+                    <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 20, padding: '6px 14px', fontSize: 14, fontWeight: 700 }}>
+                      {countdown(nextBus.departure_time)}
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ fontSize: 11, color: 'var(--mute)' }}>
-                    {route.fleet_size} buses · {minsToHHMM(route.duration_mins)}
-                  </div>
-                  <span style={{ color: 'var(--blue)', fontWeight: 700 }}>›</span>
-                </div>
-              </div>
+              )}
             </div>
-          )
-        })}
 
-        <div style={{ height: 20 }} />
+            <div style={{ padding: '10px 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>
+              {showAll ? `All ${slots.length} departures` : `Upcoming — ${upcoming.length} departures`}
+            </div>
+
+            {sloading && <div style={{ textAlign: 'center', padding: 30, color: 'var(--mute)' }}>Loading schedule...</div>}
+
+            {!sloading && slots.length === 0 && (
+              <div style={{ textAlign: 'center', padding: 30 }}>
+                <div style={{ fontSize: 13, color: 'var(--mute)', marginBottom: 12 }}>No timetable data for this route.</div>
+                <button onClick={() => nav(`/buses?route=${selRoute}`)}
+                  style={{ background: 'var(--blue)', color: 'white', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  View live buses →
+                </button>
+              </div>
+            )}
+
+            {!sloading && slots.length > 0 && (
+              <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {display.map((slot, idx) => {
+                  const dep = toMins(slot.departure_time)
+                  const arr = toMins(slot.arrival_time)
+                  const running  = dep <= now && now <= arr
+                  const isN      = dep >= now && dep - now <= 90
+                  const departed = dep < now - 5 && !running
+                  const diff     = dep - now
+
+                  return (
+                    <div key={idx} style={{
+                      background: running ? '#E8F5E9' : isN ? '#EFF6FF' : departed ? '#FAFAFA' : 'white',
+                      borderRadius: 10, padding: '10px 14px', boxShadow: 'var(--shadow)',
+                      border: running ? '1.5px solid #1A7A4A' : isN ? '1.5px solid var(--blue)' : '1.5px solid #EEF2F8',
+                      display: 'flex', alignItems: 'center', gap: 12, opacity: departed ? 0.55 : 1,
+                    }}>
+                      <div style={{ minWidth: 70, textAlign: 'center' as const }}>
+                        <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: 700, color: running ? '#1A7A4A' : isN ? 'var(--blue)' : departed ? 'var(--mute)' : 'var(--text)' }}>
+                          {fmt(slot.departure_time)}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--mute)' }}>→ {fmt(slot.arrival_time)}</div>
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 11, color: 'var(--mute)' }}>{slot.days_of_operation}</div>
+                        {running && <div style={{ fontSize: 11, fontWeight: 600, color: '#1A7A4A', display: 'flex', alignItems: 'center', gap: 4 }}><span className="live-dot" style={{ width: 6, height: 6 }} />En Route now</div>}
+                        {isN && !running && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--blue)' }}>Next bus</div>}
+                      </div>
+                      <div style={{ textAlign: 'right' as const, flexShrink: 0 }}>
+                        {running ? (
+                          <div style={{ background: '#1A7A4A', color: 'white', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>Running</div>
+                        ) : departed ? (
+                          <div style={{ fontSize: 10, color: 'var(--mute)', fontWeight: 600 }}>Departed</div>
+                        ) : (
+                          <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, color: isN ? 'var(--blue)' : 'var(--mute)' }}>
+                            {diff < 60 ? `${diff}m` : `${Math.floor(diff/60)}h ${diff%60}m`}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                {!showAll && (upcoming.length > 15 || past.length > 0) && (
+                  <button onClick={() => setShowAll(true)}
+                    style={{ width: '100%', padding: 10, background: 'white', border: '1.5px solid #EEF2F8', borderRadius: 10, fontSize: 13, fontWeight: 600, color: 'var(--blue)', cursor: 'pointer' }}>
+                    Show all {slots.length} departures ({past.length} past)
+                  </button>
+                )}
+                {showAll && (
+                  <button onClick={() => setShowAll(false)}
+                    style={{ width: '100%', padding: 10, background: 'white', border: '1.5px solid #EEF2F8', borderRadius: 10, fontSize: 13, fontWeight: 600, color: 'var(--mute)', cursor: 'pointer' }}>
+                    Show upcoming only
+                  </button>
+                )}
+
+                <button onClick={() => nav(`/buses?route=${selRoute}`)}
+                  style={{ width: '100%', padding: 12, background: 'var(--blue)', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 4 }}>
+                  🚌 View Live Buses on {selRoute}
+                </button>
+              </div>
+            )}
+            <div style={{ height: 20 }} />
+          </>
+        )}
       </div>
 
-      {/* Bottom nav */}
       <div className="bottom-nav">
-        {[
-          { icon: '🏠', label: t('home'),      path: '/' },
-          { icon: '🚌', label: t('buses'),     path: '/buses' },
-          { icon: '🪪', label: t('epass'),     path: '/epass' },
-          { icon: '⏰', label: t('timetable'), path: '/timetable' },
-          { icon: '👤', label: t('profile'),   path: '/profile' },
-        ].map((item, i) => (
-          <button key={i}
-            className={`nav-item${window.location.pathname === item.path ? ' active' : ''}`}
-            onClick={() => nav(item.path)}>
-            <div className="nav-icon">{item.icon}</div>
-            {window.location.pathname === item.path && <div className="nav-dot" />}
-            <div className="nav-label"
-              style={window.location.pathname === item.path ? { color: 'var(--blue)' } : {}}>
-              {item.label}
-            </div>
+        {([['🏠',t('home'),'/'],['🚌',t('buses'),'/buses'],['🪪',t('epass'),'/epass'],['⏰',t('timetable'),'/timetable'],['👤',t('profile'),'/profile']] as [string,string,string][]).map(([icon,label,path],i) => (
+          <button key={i} className={`nav-item${path==='/timetable'?' active':''}`} onClick={() => nav(path)}>
+            <div className="nav-icon">{icon}</div>
+            {path==='/timetable' && <div className="nav-dot"/>}
+            <div className="nav-label" style={path==='/timetable'?{color:'var(--blue)'}:{}}>{label}</div>
           </button>
         ))}
       </div>
