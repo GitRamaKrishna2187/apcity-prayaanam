@@ -9,17 +9,17 @@ export default function Profile() {
   const [activeTab, setActiveTab] = useState<'profile' | 'tickets'>('profile')
 
   const [profile, setProfile] = useState({
-    name: 'BXXXXX KRISHNA',
+    name: 'BVASSR KRISHNA',
     mobile: '9848032919',
     email: 'bvassr.krishna@apgov.in',
     aadhaar: 'XXXX XXXX 6789',
-    dob: 'yyyy-mm-dd',
+    dob: 'YYYY-MM-DD',
     gender: 'Male',
     address: 'Flat 4B, Visakha Towers, MVP Colony, Visakhapatnam – 530017',
     preferredRoute: '900R — RTC Complex to Rushikonda',
     language: 'English',
     notifications: true,
-    upiId: 'bxxxxxx@okaxis',
+    upiId: 'XXXXXX@okaxis',
   })
 
   const tickets = [
@@ -42,10 +42,9 @@ export default function Profile() {
     <div className="phone-shell screen-enter">
       <StatusBar />
 
-      {/* Header */}
       <div style={{ background: 'var(--blue)', padding: '12px 16px 0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 12 }}>
-          <button onClick={() => nav(-1)} style={{
+          <button onClick={() => nav('/')} style={{
             width: 32, height: 32, borderRadius: '50%',
             background: 'rgba(255,255,255,0.15)', border: 'none',
             color: 'white', fontSize: 16, cursor: 'pointer',
@@ -65,8 +64,6 @@ export default function Profile() {
             </button>
           )}
         </div>
-
-        {/* Tabs */}
         <div style={{ display: 'flex' }}>
           {(['profile', 'tickets'] as const).map(tab => (
             <button key={tab} onClick={() => setActiveTab(tab)} style={{
@@ -84,7 +81,6 @@ export default function Profile() {
 
       <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 145px)' }}>
 
-        {/* ── PROFILE TAB ── */}
         {activeTab === 'profile' && (
           <>
             {saved && (
@@ -92,8 +88,6 @@ export default function Profile() {
                 ✓ Profile saved successfully
               </div>
             )}
-
-            {/* Avatar */}
             <div style={{ margin: '14px 14px 10px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)', display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{ width: 60, height: 60, borderRadius: '50%', background: 'var(--blue)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700, color: 'white', fontFamily: 'Rajdhani,sans-serif', flexShrink: 0 }}>BK</div>
               <div style={{ flex: 1 }}>
@@ -105,7 +99,6 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Personal details */}
             <div style={{ margin: '0 14px 10px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 }}>Personal Details</div>
               {([
@@ -118,9 +111,7 @@ export default function Profile() {
                 <div key={key} style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.3, marginBottom: 4 }}>{label}</div>
                   {editing && !readonly ? (
-                    <input type={type} className="form-input"
-                      value={profile[key] as string}
-                      onChange={e => setProfile(p => ({ ...p, [key]: e.target.value }))} />
+                    <input type={type} className="form-input" value={profile[key] as string} onChange={e => setProfile(p => ({ ...p, [key]: e.target.value }))} />
                   ) : (
                     <div style={{ fontSize: 13, color: readonly ? 'var(--mute)' : 'var(--text)', padding: '8px 0', borderBottom: '1px solid #F0F4FA' }}>
                       {profile[key] as string}
@@ -142,16 +133,13 @@ export default function Profile() {
               <div>
                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.3, marginBottom: 4 }}>Address</div>
                 {editing ? (
-                  <textarea className="form-input" rows={3} value={profile.address}
-                    onChange={e => setProfile(p => ({ ...p, address: e.target.value }))}
-                    style={{ resize: 'none' }} />
+                  <textarea className="form-input" rows={3} value={profile.address} onChange={e => setProfile(p => ({ ...p, address: e.target.value }))} style={{ resize: 'none' }} />
                 ) : (
                   <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5, padding: '8px 0' }}>{profile.address}</div>
                 )}
               </div>
             </div>
 
-            {/* Preferences */}
             <div style={{ margin: '0 14px 10px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 }}>Travel Preferences</div>
               <div style={{ marginBottom: 12 }}>
@@ -180,7 +168,6 @@ export default function Profile() {
               </div>
             </div>
 
-            {/* Payment */}
             <div style={{ margin: '0 14px 10px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
               <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 }}>Payment & ePass</div>
               <div style={{ marginBottom: 12 }}>
@@ -196,7 +183,6 @@ export default function Profile() {
               </button>
             </div>
 
-            {/* Sign out */}
             <div style={{ margin: '0 14px 20px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
               <button style={{ width: '100%', padding: 11, background: 'white', color: '#C0392B', border: '1.5px solid #C0392B', borderRadius: 10, fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
                 Sign Out
@@ -206,7 +192,6 @@ export default function Profile() {
           </>
         )}
 
-        {/* ── TICKETS TAB ── */}
         {activeTab === 'tickets' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '14px 14px 0' }}>
@@ -218,9 +203,7 @@ export default function Profile() {
                 </div>
               ))}
             </div>
-
             <div style={{ padding: '12px 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>Recent Journeys</div>
-
             <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               {tickets.map(tk => (
                 <div key={tk.id} style={{ background: 'white', borderRadius: 12, padding: '12px 14px', boxShadow: 'var(--shadow)' }}>
@@ -239,7 +222,6 @@ export default function Profile() {
                 </div>
               ))}
             </div>
-
             <div style={{ margin: '12px 14px 20px', background: 'white', borderRadius: 12, padding: 14, boxShadow: 'var(--shadow)', textAlign: 'center' as const }}>
               <div style={{ fontSize: 12, color: 'var(--mute)', marginBottom: 10 }}>Get a monthly ePass and save up to 40% on daily travel.</div>
               <button onClick={() => nav('/epass')} style={{ width: '100%', padding: 11, background: 'var(--blue)', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
@@ -248,10 +230,8 @@ export default function Profile() {
             </div>
           </>
         )}
-
       </div>
 
-      {/* Bottom nav */}
       <div className="bottom-nav">
         {([['🏠','Home','/'],['🚌','Buses','/buses'],['🪪','ePass','/epass'],['⏰','Timetable','/timetable'],['👤','Profile','/profile']] as [string,string,string][]).map(([icon,label,path],i) => (
           <button key={i} className={`nav-item${path==='/profile'?' active':''}`} onClick={()=>nav(path)}>
