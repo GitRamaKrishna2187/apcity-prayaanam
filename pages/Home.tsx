@@ -196,18 +196,15 @@ export default function Home() {
                   </div>
                 )}
               </div>
-                 {/* Date chip */}
-<div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-  <div style={{
-    padding: '7px 12px', border: '1.5px solid var(--blue)',
-    borderRadius: 8, fontSize: 11, color: 'var(--blue)',
-    display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontWeight: 500,
-  }}>
-    📅 {t('today')}
-  </div>
-</div>
-            
-                ))}
+             {/* Date chip */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <div style={{
+                  padding: '7px 12px', border: '1.5px solid var(--blue)',
+                  borderRadius: 8, fontSize: 11, color: 'var(--blue)',
+                  display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontWeight: 500,
+                }}>
+                  📅 {t('today')}
+                </div>
               </div>
             </>
           ) : (
