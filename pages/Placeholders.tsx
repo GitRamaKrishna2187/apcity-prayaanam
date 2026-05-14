@@ -29,4 +29,4 @@ function Placeholder({ title, next }: { title: string, next?: string }) {
 export function BusDetail() { return <Placeholder title="Bus Detail"  next="4" /> }
 export function EPass()     { return <Placeholder title="ePass"       next="5" /> }
 export function Timetable() { return <Placeholder title="Timetable"   next="6" /> }
-export function Profile()   { return <Placeholder title="Profile"     next="later" /> }
+
