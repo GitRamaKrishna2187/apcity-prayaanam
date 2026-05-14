@@ -62,22 +62,131 @@ function occMsg(pct: number) {
   return '🟢 Comfortable — Plenty of seats'
 }
 
-// FIX: properly format duration as "Xh Ym" never "Xm" which looks like metres
 function formatDuration(mins: number): string {
   if (mins >= 60) {
     const h = Math.floor(mins / 60)
     const m = mins % 60
     return m > 0 ? `${h}h ${m}min` : `${h}h`
   }
-  return `${mins} min` // always append "min" not just "m"
+  return `${mins} min`
 }
 
-function addMins(base: string, add: number): string {
-  const [h, m] = base.split(':').map(Number)
-  const total = h * 60 + m + add
-  const rh = Math.floor(total / 60) % 24
-  const rm = total % 60
-  return `${String(rh).padStart(2, '0')}:${String(rm).padStart(2, '0')}`
+// ── IST time helpers ──────────────────────────────────────────────────────────
+function nowISTMins(): number {
+  const ist = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }))
+  return ist.getHours() * 60 + ist.getMinutes()
+}
+
+function timeStrToMins(t: string): number {
+  if (!t) return 0
+  const [h, m] = t.split(':').map(Number)
+  return h * 60 + m
+}
+
+function minsToTimeStr(totalMins: number): string {
+  const m = totalMins % (24 * 60)
+  const hh = Math.floor(m / 60)
+  const mm = m % 60
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+}
+
+/**
+ * Calculate which stop_index the bus is currently at based on IST time.
+ * Uses linear interpolation: elapsed / total_duration * num_stops.
+ * This is the single source of truth — database current_stop_index is ignored.
+ */
+function calcCurrentStopIndex(
+  depTime: string,
+  arrTime: string,
+  totalStops: number,
+  delayMins: number,
+  busStatus: string
+): number {
+  if (busStatus === 'depot') return 1
+  if (totalStops <= 1) return 1
+
+  const now    = nowISTMins()
+  const dep    = timeStrToMins(depTime) + (delayMins || 0)
+  const arr    = timeStrToMins(arrTime) + (delayMins || 0)
+  const dur    = arr - dep
+
+  if (dur <= 0) return 1
+  if (now < dep) return 1           // not departed yet
+  if (now >= arr) return totalStops // completed journey
+
+  const elapsed  = now - dep
+  const progress = elapsed / dur    // 0.0 to 1.0
+
+  // Map progress to stop index (1-based)
+  const idx = Math.max(1, Math.min(totalStops, Math.floor(progress * totalStops) + 1))
+  return idx
+}
+
+/**
+ * Calculate stop time for a given stop index using linear interpolation.
+ */
+function calcStopTime(
+  depTime: string,
+  arrTime: string,
+  stopIdx: number,
+  totalStops: number,
+  delayMins: number
+): string {
+  const dep = timeStrToMins(depTime) + (delayMins || 0)
+  const arr = timeStrToMins(arrTime) + (delayMins || 0)
+  const dur = arr - dep
+  if (totalStops <= 1) return depTime
+  const segMins = Math.round((dur / (totalStops - 1)) * (stopIdx - 1))
+  return minsToTimeStr(dep + segMins)
+}
+
+/**
+ * Calculate realistic occupancy based on IST time.
+ * Passengers board at start, peak in middle, alight at destination.
+ */
+function calcOccupancy(
+  capacity: number,
+  depTime: string,
+  arrTime: string,
+  seatsOccupied: number,
+  busStatus: string
+): number {
+  if (busStatus === 'depot' || busStatus === 'breakdown') {
+    return busStatus === 'breakdown' ? Math.min(100, Math.round((seatsOccupied / capacity) * 100)) : 0
+  }
+
+  const now    = nowISTMins()
+  const dep    = timeStrToMins(depTime)
+  const arr    = timeStrToMins(arrTime)
+  const dur    = arr - dep
+
+  // If database has a valid non-zero occupancy, trust it (set by cron)
+  if (seatsOccupied > 0) {
+    return Math.min(100, Math.round((seatsOccupied / capacity) * 100))
+  }
+
+  // Fallback: estimate from time of day
+  if (dur <= 0 || now < dep) return 0
+  if (now >= arr) return 0
+
+  const progress = (now - dep) / dur  // 0 to 1
+  const hour     = Math.floor(now / 60)
+
+  // Peak hours: 06-09 morning, 17-20 evening
+  const isPeakMorning = hour >= 6 && hour <= 9
+  const isPeakEvening = hour >= 17 && hour <= 20
+
+  // Bell curve: low at start, peak at 40-60% of journey, drops near end
+  const journeyFactor = Math.sin(progress * Math.PI)  // 0 → 1 → 0
+
+  let baseOccupancy: number
+  if (isPeakMorning || isPeakEvening) {
+    baseOccupancy = 0.55 + journeyFactor * 0.35  // 55-90%
+  } else {
+    baseOccupancy = 0.20 + journeyFactor * 0.35  // 20-55%
+  }
+
+  return Math.min(100, Math.round(baseOccupancy * 100))
 }
 
 export default function BusDetail() {
@@ -87,13 +196,13 @@ export default function BusDetail() {
   const [params] = useSearchParams()
   const busId = params.get('bus')
 
-  const [route, setRoute]     = useState<RouteInfo | null>(null)
-  const [stops, setStops]     = useState<Stop[]>([])
-  const [buses, setBuses]     = useState<BusRow[]>([])
-  const [selBus, setSelBus]   = useState<BusRow | null>(null)
+  const [route, setRoute]       = useState<RouteInfo | null>(null)
+  const [stops, setStops]       = useState<Stop[]>([])
+  const [buses, setBuses]       = useState<BusRow[]>([])
+  const [selBus, setSelBus]     = useState<BusRow | null>(null)
   const [lastSync, setLastSync] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [booked, setBooked]   = useState(false)
+  const [loading, setLoading]   = useState(true)
+  const [booked, setBooked]     = useState(false)
 
   const fetchData = useCallback(async () => {
     if (!routeNo) return
@@ -112,12 +221,14 @@ export default function BusDetail() {
           const found = bRes.data.find(b => b.id === busId)
           if (found) { setSelBus(found); setLastSync(0); return }
         }
-        const running = bRes.data.find(b => b.status === 'running') || bRes.data[0]
-        setSelBus(prev => {
-          // If same bus, update its data but keep selection
-          if (prev && running && prev.id === running.id) return running
-          return running || null
-        })
+        // Prefer currently running bus
+        const now = nowISTMins()
+        const running = bRes.data.find(b => {
+          const dep = timeStrToMins(b.departure_time)
+          const arr = timeStrToMins(b.arrival_time)
+          return dep <= now && now <= arr
+        }) || bRes.data.find(b => b.status === 'running') || bRes.data[0]
+        setSelBus(running || null)
       }
       setLastSync(0)
     } catch (e) { console.error(e) }
@@ -125,27 +236,22 @@ export default function BusDetail() {
   }, [routeNo, busId])
 
   useEffect(() => { fetchData() }, [fetchData])
-
   useEffect(() => {
     const iv = setInterval(fetchData, 25000)
     return () => clearInterval(iv)
   }, [fetchData])
-
   useEffect(() => {
     const tick = setInterval(() => setLastSync(s => s + 1), 1000)
     return () => clearInterval(tick)
   }, [])
 
   if (loading) return (
-    <div className="phone-shell">
-       <StatusBar />
+    <div className="phone-shell"><StatusBar />
       <div style={{ textAlign: 'center', padding: 60, color: 'var(--mute)' }}>Loading route...</div>
     </div>
   )
-
   if (!route) return (
-    <div className="phone-shell">
-    <StatusBar />
+    <div className="phone-shell"><StatusBar />
       <div style={{ padding: 24 }}>
         <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>Route not found</div>
         <button className="btn-primary" onClick={() => nav(-1)}>← Go Back</button>
@@ -153,11 +259,25 @@ export default function BusDetail() {
     </div>
   )
 
-  const currentIdx = selBus?.current_stop_index ?? 1
-  const capacity   = route.capacity
-  const occupied   = selBus?.seats_occupied ?? 0
-  const occPct     = Math.min(100, Math.round((occupied / capacity) * 100))
-  const seatsLeft  = capacity - occupied
+  // ── KEY FIX: compute stop index from IST time, not from database ──────────
+  const totalStops = stops.length || 5
+  const currentIdx = selBus
+    ? calcCurrentStopIndex(
+        selBus.departure_time,
+        selBus.arrival_time,
+        totalStops,
+        selBus.delay_mins || 0,
+        selBus.status
+      )
+    : 1
+
+  // ── KEY FIX: compute occupancy correctly ──────────────────────────────────
+  const capacity  = route.capacity
+  const occPct    = selBus
+    ? calcOccupancy(capacity, selBus.departure_time, selBus.arrival_time, selBus.seats_occupied, selBus.status)
+    : 0
+  const occupied  = Math.round((occPct / 100) * capacity)
+  const seatsLeft = capacity - occupied
 
   const baseFare  = Math.round(route.distance_km * (FARE_RATES[route.bus_type] || 2))
   const resFee    = route.ac ? 20 : 10
@@ -171,6 +291,14 @@ export default function BusDetail() {
   }
   const statusInfo = statusMap[selBus?.status || 'depot'] || statusMap.depot
 
+  // Determine bus status from IST time (more accurate than DB status)
+  const now = nowISTMins()
+  const depMins = selBus ? timeStrToMins(selBus.departure_time) : 0
+  const arrMins = selBus ? timeStrToMins(selBus.arrival_time) : 0
+  const isCurrentlyRunning = selBus && depMins <= now && now <= arrMins
+  const hasNotDeparted = selBus && now < depMins
+  const hasCompleted = selBus && now > arrMins
+
   const R    = 28
   const circ = 2 * Math.PI * R
   const offset = circ - (occPct / 100) * circ
@@ -178,6 +306,7 @@ export default function BusDetail() {
   return (
     <div className="phone-shell">
       <StatusBar />
+
       {/* HEADER */}
       <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
@@ -196,16 +325,13 @@ export default function BusDetail() {
           <div style={{ background: 'var(--light)', color: 'var(--blue)', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
             🕐 {selBus?.departure_time || '--'} → {selBus?.arrival_time || '--'}
           </div>
-          <div style={{ background: '#FFF8E1', color: '#9A6700', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
-            APSRTC
-          </div>
-          {/* FIX: use formatDuration instead of raw mins */}
+          <div style={{ background: '#FFF8E1', color: '#9A6700', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>APSRTC</div>
           <div style={{ background: '#E8F5E9', color: '#1A7A4A', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
             {formatDuration(route.duration_mins)}
           </div>
-          <div style={{ background: statusInfo.bg, color: statusInfo.color, fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
-            {selBus?.status === 'running' && <span className="live-dot" style={{ width: 5, height: 5, marginRight: 3 }} />}
-            {statusInfo.label}
+          <div style={{ background: isCurrentlyRunning ? '#E8F5E9' : hasNotDeparted ? '#EFF6FF' : '#F3F4F6', color: isCurrentlyRunning ? '#1A7A4A' : hasNotDeparted ? '#1B3A6B' : '#7A8BA6', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
+            {isCurrentlyRunning && <span className="live-dot" style={{ width: 5, height: 5, marginRight: 3 }} />}
+            {isCurrentlyRunning ? 'Running' : hasNotDeparted ? `Departs in ${depMins - now} min` : hasCompleted ? 'Trip completed' : statusInfo.label}
           </div>
         </div>
       </div>
@@ -213,54 +339,59 @@ export default function BusDetail() {
       {/* BUS SELECTOR */}
       {buses.length > 1 && (
         <div style={{ background: 'white', padding: '10px 14px', borderBottom: '1px solid #EEF2F8' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.3 }}>
             Select bus — {buses.length} available
           </div>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
-            {buses.map(b => (
-              <button key={b.id} onClick={() => setSelBus(b)} style={{
-                padding: '5px 12px', borderRadius: 20,
-                border: `1.5px solid ${selBus?.id === b.id ? 'var(--blue)' : '#E2E8F0'}`,
-                background: selBus?.id === b.id ? 'var(--blue)' : 'white',
-                color: selBus?.id === b.id ? 'white' : 'var(--text)',
-                fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-              }}>
-                {b.registration} · {b.departure_time}
-              </button>
-            ))}
+            {buses.map(b => {
+              const bDep = timeStrToMins(b.departure_time)
+              const bArr = timeStrToMins(b.arrival_time)
+              const bRunning = bDep <= now && now <= bArr
+              return (
+                <button key={b.id} onClick={() => setSelBus(b)} style={{
+                  padding: '5px 12px', borderRadius: 20,
+                  border: `1.5px solid ${selBus?.id === b.id ? 'var(--blue)' : '#E2E8F0'}`,
+                  background: selBus?.id === b.id ? 'var(--blue)' : bRunning ? '#E8F5E9' : 'white',
+                  color: selBus?.id === b.id ? 'white' : bRunning ? '#1A7A4A' : 'var(--text)',
+                  fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                }}>
+                  {bRunning && <span className="live-dot" style={{ width: 5, height: 5, marginRight: 3 }} />}
+                  {b.registration} · {b.departure_time}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
 
-      {/* SCROLLABLE */}
       <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 220px)' }}>
 
-        {/* ROUTE TRACKER */}
+        {/* ROUTE TRACKER — IST-correct */}
         <div style={{ background: 'white', margin: 14, borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span>🚌 {t('liveRoute')} — Bus Position & Stops</span>
             <span style={{ fontSize: 10, color: 'var(--blue)', fontWeight: 500 }}>LIVE · {lastSync}s AGO</span>
           </div>
 
           {stops.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 20, color: 'var(--mute)', fontSize: 13 }}>
-              Stop data loading...
-            </div>
+            <div style={{ textAlign: 'center', padding: 20, color: 'var(--mute)', fontSize: 13 }}>Stop data loading...</div>
           ) : (
             <div style={{ position: 'relative', paddingLeft: 44 }}>
               {stops.map((stop, idx) => {
                 const isLast        = idx === stops.length - 1
                 const isPassed      = stop.stop_index < currentIdx
                 const isCurrent     = stop.stop_index === currentIdx
-                const isFirst       = idx === 0
                 const isDestination = isLast
 
-                // FIX: compute per-stop time correctly
-                const segMins = idx === 0
-                  ? 0
-                  : Math.round((route.duration_mins / Math.max(stops.length - 1, 1)) * idx)
+                // ── Stop time calculated from IST, not hardcoded ──────────────
                 const stopTime = selBus
-                  ? addMins(selBus.departure_time, segMins + (selBus.delay_mins || 0))
+                  ? calcStopTime(
+                      selBus.departure_time,
+                      selBus.arrival_time,
+                      stop.stop_index,
+                      totalStops,
+                      selBus.delay_mins || 0
+                    )
                   : '--:--'
 
                 let circleStyle: React.CSSProperties = {
@@ -284,11 +415,7 @@ export default function BusDetail() {
                   nameStyle = { ...nameStyle, fontWeight: 700, color: 'var(--blue)', fontSize: 14 }
                   badge = <span style={{ display: 'inline-block', background: 'var(--blue)', color: 'white', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10, marginLeft: 6, verticalAlign: 'middle' }}>🚌 {t('busHere')}</span>
                   connStyle = { ...connStyle, background: 'linear-gradient(to bottom, var(--blue), #E2E8F0)' }
-                } else if (isFirst) {
-                  circleStyle = { ...circleStyle, background: '#FFF3E0', borderColor: '#F5A623', borderWidth: 3 }
-                  nameStyle = { ...nameStyle, fontWeight: 600, color: '#9A6700' }
-                  badge = <span style={{ display: 'inline-block', background: '#F5A623', color: 'var(--blue)', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10, marginLeft: 6, verticalAlign: 'middle' }}>📍 {t('yourStop')}</span>
-                } else if (isDestination) {
+                } else if (isDestination && !isPassed && !isCurrent) {
                   nameStyle = { ...nameStyle, fontWeight: 600 }
                   badge = <span style={{ display: 'inline-block', background: '#FDECEA', color: '#C0392B', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10, marginLeft: 6, verticalAlign: 'middle' }}>🏁 {t('destination')}</span>
                 }
@@ -314,7 +441,7 @@ export default function BusDetail() {
 
         {/* OCCUPANCY DONUT */}
         <div style={{ background: 'white', margin: '0 14px 14px', borderRadius: 12, padding: 14, boxShadow: 'var(--shadow)' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 }}>
             📊 {t('liveOccupancy')}
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -333,7 +460,9 @@ export default function BusDetail() {
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
                 <span style={{ color: '#1A7A4A' }}>{seatsLeft} {t('seatsLeft')}</span> of {capacity}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 4 }}>Derived from ePoS ticket data</div>
+              <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 4 }}>
+                {selBus?.seats_occupied ? 'From ePoS ticket data' : 'Estimated from time of day'}
+              </div>
               <div style={{ display: 'inline-block', marginTop: 6, padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: occPct >= 85 ? '#FDECEA' : occPct >= 60 ? '#FFF3E0' : '#E8F5E9', color: occColor(occPct) }}>
                 {occMsg(occPct)}
               </div>
@@ -351,7 +480,7 @@ export default function BusDetail() {
 
         {/* FARE */}
         <div style={{ background: 'white', margin: '0 14px 14px', borderRadius: 12, padding: 14, boxShadow: 'var(--shadow)' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 12 }}>
             🎫 {t('fareBreakdown')}
           </div>
           {[
@@ -372,10 +501,10 @@ export default function BusDetail() {
           </div>
         </div>
 
-        {/* DRIVER INFO */}
+        {/* DRIVER */}
         {selBus?.driver_name && (
           <div style={{ background: 'white', margin: '0 14px 14px', borderRadius: 12, padding: 14, boxShadow: 'var(--shadow)' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 10 }}>
               👨‍✈️ Driver Info
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
