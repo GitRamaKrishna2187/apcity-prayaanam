@@ -25,8 +25,8 @@ function Placeholder({ title, next }: { title: string, next?: string }) {
     </div>
   )
 }
-
+export function Buses()     { return <Placeholder title="Select Bus"  next="3" /> }
 export function BusDetail() { return <Placeholder title="Bus Detail"  next="4" /> }
 export function EPass()     { return <Placeholder title="ePass"       next="5" /> }
 export function Timetable() { return <Placeholder title="Timetable"   next="6" /> }
-
+export default Buses
