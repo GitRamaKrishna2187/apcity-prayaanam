@@ -9,7 +9,7 @@ import Buses from './pages/Buses'
 import BusDetail from './pages/BusDetail'
 import EPass from './pages/EPass'
 import Timetable from './pages/Timetable'
-import { Profile } from './pages/Placeholders'
+
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
