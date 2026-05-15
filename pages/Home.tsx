@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
 import type { Language } from '../i18n/LanguageContext'
+import StatusBar from './StatusBar'
 
 interface Stop { stop_name: string; city: string }
 interface Announcement { id: string; message: string; type: string }
@@ -28,7 +29,7 @@ export default function Home() {
   const [showLang, setShowLang] = useState(false)
   const [annIdx, setAnnIdx] = useState(0)
   const fromRef = useRef<HTMLInputElement>(null)
-  const toRef = useRef<HTMLInputElement>(null)
+  const toRef   = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     supabase.from('announcements').select('id,message,type')
@@ -100,11 +101,9 @@ export default function Home() {
 
   return (
     <div className="phone-shell">
-      <div className="status-bar">
-        <span>9:41 AM</span>
-        <span>APCityPrayaanam • 4G</span>
-      </div>
+      <StatusBar />
 
+      {/* APP HEADER */}
       <div className="app-header">
         <div className="header-top">
           <div>
@@ -145,7 +144,7 @@ export default function Home() {
 
           {mode === 'stops' ? (
             <>
-              {/* FROM input */}
+              {/* FROM */}
               <div style={{ position: 'relative', marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#E8F5E9', border: '2px solid #1A7A4A', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#1A7A4A', flexShrink: 0 }}>A</div>
@@ -168,7 +167,7 @@ export default function Home() {
                 )}
               </div>
 
-              {/* SWAP button */}
+              {/* SWAP */}
               <button onClick={swap} style={{
                 position: 'absolute', right: 28,
                 width: 28, height: 28, borderRadius: '50%',
@@ -177,7 +176,7 @@ export default function Home() {
                 color: 'var(--blue)', fontSize: 16, fontWeight: 700, zIndex: 5, marginTop: -4,
               }}>⇅</button>
 
-              {/* TO input */}
+              {/* TO */}
               <div style={{ position: 'relative' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#FDECEA', border: '2px solid #C0392B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#C0392B', flexShrink: 0 }}>B</div>
@@ -225,15 +224,15 @@ export default function Home() {
             🔍 {t('searchBuses')}
           </button>
         </div>
-
-        {/* SCROLLABLE CONTENT */}
       </div>
+
+      {/* SCROLLABLE CONTENT */}
       <div className="scrollable">
 
         {/* Quick actions */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, padding: 14 }}>
           {[
-            { icon: '🪪', label: t('myEPass'), path: '/epass' },
+            { icon: '🪪', label: t('myEPass'),   path: '/epass' },
             { icon: '🚌', label: t('liveBuses'), path: '/buses' },
             { icon: '📋', label: t('myTickets'), path: '/profile' },
             { icon: '⏰', label: t('timetable'), path: '/timetable' },
@@ -308,11 +307,11 @@ export default function Home() {
         <div style={{ padding: '0 14px 14px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           {[
             { no: '900R', name: 'RTC → Rushikonda' },
-            { no: '400', name: 'RTC → Gajuwaka' },
-            { no: '38J', name: 'Bheemunipatnam → Steel Plant' },
-            { no: '60R', name: 'Simhachalam → MVP Colony' },
-            { no: '22C', name: 'RTC → Airport' },
-            { no: '10K', name: 'RTC → Maddilapalem' },
+            { no: '400',  name: 'RTC → Gajuwaka' },
+            { no: '38J',  name: 'Bheemunipatnam → Steel Plant' },
+            { no: '60R',  name: 'Simhachalam → MVP Colony' },
+            { no: '22C',  name: 'RTC → Airport' },
+            { no: '10K',  name: 'RTC → Maddilapalem' },
           ].map(r => (
             <button key={r.no} onClick={() => nav(`/buses?route=${r.no}`)} style={{
               background: 'white', borderRadius: 10, padding: '10px 12px',
@@ -329,19 +328,17 @@ export default function Home() {
         <div style={{ height: 20 }} />
       </div>
 
-      </div>
-
       {/* LANGUAGE MODAL */}
       {showLang && (
         <div className="lang-modal-overlay" onClick={() => setShowLang(false)}>
           <div className="lang-modal" onClick={e => e.stopPropagation()}>
             <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700, color: 'var(--blue)', marginBottom: 16, textAlign: 'center' }}>
-              Select Language / భాష ఎంచుకోండి
+              Select Language • భాష ఎంచుకోండి
             </div>
             {([
               { code: 'en' as Language, flag: '🇬🇧', name: 'English', native: 'English' },
-              { code: 'te' as Language, flag: '🇮🇳', name: 'Telugu', native: 'తెలుగు' },
-              { code: 'hi' as Language, flag: '🇮🇳', name: 'Hindi', native: 'हिंदी' },
+              { code: 'te' as Language, flag: '🇮🇳', name: 'Telugu',  native: 'తెలుగు' },
+              { code: 'hi' as Language, flag: '🇮🇳', name: 'Hindi',   native: 'हिंदी' },
             ]).map(l => (
               <div key={l.code} className={`lang-option${lang === l.code ? ' selected' : ''}`}
                 onClick={() => { setLang(l.code); setShowLang(false) }}>
@@ -364,11 +361,11 @@ export default function Home() {
       {/* BOTTOM NAV */}
       <div className="bottom-nav">
         {[
-          { icon: '🏠', label: t('home'), path: '/' },
-          { icon: '🚌', label: t('buses'), path: '/buses' },
-          { icon: '🪪', label: t('epass'), path: '/epass' },
+          { icon: '🏠', label: t('home'),      path: '/' },
+          { icon: '🚌', label: t('buses'),     path: '/buses' },
+          { icon: '🪪', label: t('epass'),     path: '/epass' },
           { icon: '⏰', label: t('timetable'), path: '/timetable' },
-          { icon: '👤', label: t('profile'), path: '/profile' },
+          { icon: '👤', label: t('profile'),   path: '/profile' },
         ].map((item, i) => (
           <button key={i} className={`nav-item${window.location.pathname === item.path ? ' active' : ''}`}
             onClick={() => nav(item.path)}>
