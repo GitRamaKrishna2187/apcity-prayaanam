@@ -329,6 +329,8 @@ export default function Home() {
         <div style={{ height: 20 }} />
       </div>
 
+      </div>
+
       {/* LANGUAGE MODAL */}
       {showLang && (
         <div className="lang-modal-overlay" onClick={() => setShowLang(false)}>
@@ -375,7 +377,6 @@ export default function Home() {
             <div className="nav-label" style={window.location.pathname === item.path ? { color: 'var(--blue)' } : {}}>{item.label}</div>
           </button>
         ))}
-      </div>
       </div>
     </div>
   )
