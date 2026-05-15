@@ -342,7 +342,7 @@ export default function Buses() {
                   <div style={{ background: 'var(--blue)', color: 'white', fontFamily: 'Rajdhani,sans-serif', fontSize: 17, fontWeight: 700, padding: '3px 10px', borderRadius: 8, minWidth: 56, textAlign: 'center', flexShrink: 0 }}>{group.route_no}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{group.from_stop} – {group.to_stop}</div>
-                    <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>APSRTC · {BUS_TYPE_LABELS[group.bus_type]} · {group.ac ? 'A/C' : 'Non A/C'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 2 }}>{BUS_TYPE_LABELS[group.bus_type]} · {group.ac ? 'A/C' : 'Non A/C'}</div>
                   </div>
                   <div style={{ background: 'var(--light)', color: 'var(--blue)', fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 20, flexShrink: 0 }}>🏭 {group.depot}</div>
                 </div>
