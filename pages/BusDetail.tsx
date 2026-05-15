@@ -230,9 +230,10 @@ function calcOccupancy(
 export default function BusDetail() {
   const { t } = useLang()
   const nav = useNavigate()
-  const { id: routeNo } = useParams<{ id: string }>()
   const [params] = useSearchParams()
   const busId = params.get('bus')
+  const { id: routeNoPath } = useParams<{ id: string }>()
+  const routeNo = params.get('route') || (routeNoPath ? decodeURIComponent(routeNoPath) : undefined)
 
   const [route, setRoute]       = useState<RouteInfo | null>(null)
   const [stops, setStops]       = useState<Stop[]>([])
