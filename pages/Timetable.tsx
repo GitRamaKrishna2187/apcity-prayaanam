@@ -80,15 +80,41 @@ export default function Timetable() {
   }, [])
 
   const fetchSlots = useCallback(async (rno: string) => {
-    setSloading(true); setShowAll(false)
-    const { data: tt } = await supabase.from('timetable')
-      .select('route_no,departure_time,arrival_time,days_of_operation')
-      .eq('route_no', rno).order('departure_time', { ascending: true })
-    if (tt && tt.length > 0) { setSlots(tt); setSloading(false); return }
-    const { data: bd } = await supabase.from('buses')
-      .select('departure_time,arrival_time,route_no')
-      .eq('route_no', rno).order('departure_time', { ascending: true })
-    setSlots((bd||[]).map(b => ({ route_no: rno, departure_time: b.departure_time, arrival_time: b.arrival_time, days_of_operation: 'Daily' })))
+    setSloading(true)
+
+    // PRIMARY SOURCE: buses table — real vehicle registrations with actual departure times
+    // This guarantees Timetable matches what Buses screen shows
+    const { data: bd } = await supabase
+      .from('buses')
+      .select('departure_time, arrival_time, route_no, registration, status')
+      .eq('route_no', rno)
+      .order('departure_time', { ascending: true })
+
+    if (bd && bd.length > 0) {
+      // Deduplicate by departure_time (multiple buses may share same time)
+      const seen = new Set<string>()
+      const unique = bd.filter(b => {
+        if (seen.has(b.departure_time)) return false
+        seen.add(b.departure_time)
+        return true
+      })
+      setSlots(unique.map(b => ({
+        route_no: rno,
+        departure_time: b.departure_time,
+        arrival_time: b.arrival_time,
+        days_of_operation: 'Daily',
+      })))
+      setSloading(false)
+      return
+    }
+
+    // FALLBACK: timetable table if no buses found for this route
+    const { data: tt } = await supabase
+      .from('timetable')
+      .select('route_no, departure_time, arrival_time, days_of_operation')
+      .eq('route_no', rno)
+      .order('departure_time', { ascending: true })
+    setSlots((tt || []))
     setSloading(false)
   }, [])
 
@@ -198,8 +224,8 @@ export default function Timetable() {
             </div>
 
             <div style={{ padding: '10px 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.4, display: 'flex', justifyContent: 'space-between' }}>
-              <span>Full Day Schedule — {slots.length} trips</span>
-              <span style={{ fontSize: 11, fontWeight: 400 }}>{past.length} completed · {upcoming.length} upcoming</span>
+              <span>Schedule — {slots.length} buses</span>
+              <span style={{ fontSize: 11, fontWeight: 400 }}>{past.length} done · {upcoming.length} upcoming</span>
             </div>
 
             {sloading && <div style={{ textAlign: 'center', padding: 30, color: 'var(--mute)' }}>Loading schedule...</div>}
