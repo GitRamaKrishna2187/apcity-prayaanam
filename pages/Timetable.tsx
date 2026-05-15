@@ -95,9 +95,13 @@ export default function Timetable() {
     return r.route_no.toLowerCase().includes(q) || r.from_stop.toLowerCase().includes(q) || r.to_stop.toLowerCase().includes(q)
   })
   const selR = routes.find(r => r.route_no === selRoute)
-  const upcoming = slots.filter(s => toMins(s.departure_time) >= now - 5)
-  const past     = slots.filter(s => toMins(s.departure_time) < now - 5)
-  const display  = showAll ? slots : upcoming.slice(0, 15)
+  // Timetable shows FULL DAY schedule — past = completed, present = running, future = upcoming
+  // Slots are already ordered by departure_time ASC from Supabase
+  const past     = slots.filter(s => toMins(s.departure_time) < now - 5 &&
+                                     !isRunning(s.departure_time, s.arrival_time))
+  const upcoming = slots.filter(s => toMins(s.departure_time) >= now - 5 ||
+                                     isRunning(s.departure_time, s.arrival_time))
+  const display  = slots  // Always show ALL slots — full day timetable
   const nextBus  = slots.find(s => toMins(s.departure_time) >= now)
 
   return (
@@ -187,8 +191,9 @@ export default function Timetable() {
               )}
             </div>
 
-            <div style={{ padding: '10px 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.4 }}>
-              {showAll ? `All ${slots.length} departures` : `Upcoming — ${upcoming.length} departures`}
+            <div style={{ padding: '10px 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.4, display: 'flex', justifyContent: 'space-between' }}>
+              <span>Full Day Schedule — {slots.length} trips</span>
+              <span style={{ fontSize: 11, fontWeight: 400 }}>{past.length} completed · {upcoming.length} upcoming</span>
             </div>
 
             {sloading && <div style={{ textAlign: 'center', padding: 30, color: 'var(--mute)' }}>Loading schedule...</div>}
@@ -211,17 +216,40 @@ export default function Timetable() {
                   const running  = dep <= now && now <= arr
                   const isN      = dep >= now && dep - now <= 90
                   const departed = dep < now - 5 && !running
+                  // Show NOW divider before the first non-completed trip
+                  const prevSlot = display[idx - 1]
+                  const showNowDivider = idx > 0 && prevSlot &&
+                    toMins(prevSlot.departure_time) < now - 5 &&
+                    !isRunning(prevSlot.departure_time, prevSlot.arrival_time) &&
+                    (running || (!departed))
                   const diff     = dep - now
 
                   return (
+                    <>
+                    {showNowDivider && (
+                      <div style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '4px 0', margin: '4px 0',
+                      }}>
+                        <div style={{ flex: 1, height: 1.5, background: 'var(--blue)', opacity: 0.3 }} />
+                        <div style={{
+                          fontSize: 10, fontWeight: 700, color: 'var(--blue)',
+                          background: '#EFF6FF', padding: '3px 10px', borderRadius: 20,
+                          border: '1px solid var(--blue)', whiteSpace: 'nowrap',
+                        }}>
+                          ▼ NOW — {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata' })}
+                        </div>
+                        <div style={{ flex: 1, height: 1.5, background: 'var(--blue)', opacity: 0.3 }} />
+                      </div>
+                    )}
                     <div key={idx} style={{
-                      background: running ? '#E8F5E9' : isN ? '#EFF6FF' : departed ? '#FAFAFA' : 'white',
-                      borderRadius: 10, padding: '10px 14px', boxShadow: 'var(--shadow)',
-                      border: running ? '1.5px solid #1A7A4A' : isN ? '1.5px solid var(--blue)' : '1.5px solid #EEF2F8',
-                      display: 'flex', alignItems: 'center', gap: 12, opacity: departed ? 0.55 : 1,
+                      background: running ? '#E8F5E9' : isN ? '#EFF6FF' : departed ? '#F8F8F8' : 'white',
+                      borderRadius: 10, padding: '10px 14px', boxShadow: departed ? 'none' : 'var(--shadow)',
+                      border: running ? '1.5px solid #1A7A4A' : isN ? '1.5px solid var(--blue)' : departed ? '1px solid #F0F0F0' : '1.5px solid #EEF2F8',
+                      display: 'flex', alignItems: 'center', gap: 12, opacity: departed ? 0.6 : 1,
                     }}>
                       <div style={{ minWidth: 70, textAlign: 'center' as const }}>
-                        <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: 700, color: running ? '#1A7A4A' : isN ? 'var(--blue)' : departed ? 'var(--mute)' : 'var(--text)' }}>
+                        <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: departed ? 400 : 700, color: running ? '#1A7A4A' : isN ? 'var(--blue)' : departed ? '#9CA3AF' : 'var(--text)' }}>
                           {fmt(slot.departure_time)}
                         </div>
                         <div style={{ fontSize: 10, color: 'var(--mute)' }}>→ {fmt(slot.arrival_time)}</div>
@@ -235,7 +263,9 @@ export default function Timetable() {
                         {running ? (
                           <div style={{ background: '#1A7A4A', color: 'white', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>Running</div>
                         ) : departed ? (
-                          <div style={{ fontSize: 10, color: 'var(--mute)', fontWeight: 600 }}>Departed</div>
+                          <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
+                          <span>✓</span> Completed
+                        </div>
                         ) : (
                           <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, color: isN ? 'var(--blue)' : 'var(--mute)' }}>
                             {diff < 60 ? `${diff}m` : `${Math.floor(diff/60)}h ${diff%60}m`}
@@ -243,20 +273,13 @@ export default function Timetable() {
                         )}
                       </div>
                     </div>
+                    </div>
+                    </>
                   )
                 })}
 
                 {!showAll && (upcoming.length > 15 || past.length > 0) && (
-                  <button onClick={() => setShowAll(true)}
-                    style={{ width: '100%', padding: 10, background: 'white', border: '1.5px solid #EEF2F8', borderRadius: 10, fontSize: 13, fontWeight: 600, color: 'var(--blue)', cursor: 'pointer' }}>
-                    Show all {slots.length} departures ({past.length} past)
-                  </button>
-                )}
-                {showAll && (
-                  <button onClick={() => setShowAll(false)}
-                    style={{ width: '100%', padding: 10, background: 'white', border: '1.5px solid #EEF2F8', borderRadius: 10, fontSize: 13, fontWeight: 600, color: 'var(--mute)', cursor: 'pointer' }}>
-                    Show upcoming only
-                  </button>
+                                  {/* All trips shown by default */}
                 )}
 
                 <button onClick={() => nav(`/buses?route=${selRoute}`)}
