@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { LanguageProvider } from './i18n/LanguageContext'
 import './index.css'
-
 import Home from './pages/Home'
 import Buses from './pages/Buses'
 import BusDetail from './pages/BusDetail'
@@ -18,7 +17,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
         <Routes>
           <Route path="/"          element={<Home />} />
           <Route path="/buses"     element={<Buses />} />
+
+          {/* /bus?route=52S%2F52V — search param for routes containing slashes */}
+          <Route path="/bus"       element={<BusDetail />} />
+
+          {/* /bus/900R — path param for simple route numbers without slashes */}
           <Route path="/bus/:id"   element={<BusDetail />} />
+
           <Route path="/epass"     element={<EPass />} />
           <Route path="/timetable" element={<Timetable />} />
           <Route path="/profile"   element={<Profile />} />
