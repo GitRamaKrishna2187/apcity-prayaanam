@@ -8,14 +8,11 @@ export default function StatusBar() {
       hour12: true,
       timeZone: 'Asia/Kolkata',
     })
-
   const [time, setTime] = useState(getIST())
-
   useEffect(() => {
     const t = setInterval(() => setTime(getIST()), 1000)
     return () => clearInterval(t)
   }, [])
-
   return (
     <div style={{
       background: 'var(--blue)',
@@ -28,7 +25,7 @@ export default function StatusBar() {
         {time}
       </span>
       <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: 11, fontWeight: 500 }}>
-        APSRTC APCityPrayaanam • 4G
+        APCityPrayaanam • 4G
       </span>
     </div>
   )
