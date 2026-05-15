@@ -41,8 +41,9 @@ const STATUS_COLORS: Record<string, string> = {
   running: '#1A7A4A', delayed: '#E65100', depot: '#7A8BA6', breakdown: '#C0392B',
 }
 const STATUS_BG: Record<string, string> = {
-  running: '#E8F5E9', delayed: '#FFF3E0', depot: '#F3F4F6', breakdown: '#FDECEA',
+  running: '#E8F5E9', delayed: '#FFF3E0', depot: '#F3F4F6', breakdown: '#FDECEA', completed: '#F3F4F6',
 }
+const STATUS_COLORS_COMPLETED = '#9CA3AF'  // grey for completed
 
 function occColor(pct: number) {
   if (pct >= 85) return '#C0392B'
@@ -72,22 +73,37 @@ function timeToMins(t: string): number {
   return h * 60 + m
 }
 
-// Show bus if: currently running, departing within 3h, delayed, or breakdown
+// Show bus if: mid-journey, departing within 3h, delayed, breakdown
+// NEVER show completed trips (arrival time passed)
 function isRelevantBus(bus: BusRow): boolean {
   const now = nowISTMins()
   const dep = timeToMins(bus.departure_time)
   const arr = timeToMins(bus.arrival_time)
-  if (dep <= now && now <= arr) return true          // mid-journey
-  if (dep > now && dep - now <= 180) return true     // departing within 3h
+  // Completed trip — exclude unless breakdown/delayed
+  if (now > arr && bus.status !== 'delayed' && bus.status !== 'breakdown') return false
+  if (dep <= now && now <= arr) return true      // mid-journey
+  if (dep > now && dep - now <= 180) return true // departing within 3h
   if (bus.status === 'delayed') return true
   if (bus.status === 'breakdown') return true
   return false
+}
+
+// Label for completed trips
+function tripLabel(bus: BusRow): string {
+  const now = nowISTMins()
+  const arr = timeToMins(bus.arrival_time)
+  if (now > arr && bus.status !== 'breakdown' && bus.status !== 'delayed') return 'COMPLETED'
+  if (bus.status === 'running') return 'RUNNING'
+  if (bus.status === 'delayed') return 'DELAYED'
+  if (bus.status === 'breakdown') return 'BREAKDOWN'
+  return departsIn(bus)
 }
 
 function departsIn(bus: BusRow): string {
   const now = nowISTMins()
   const dep = timeToMins(bus.departure_time)
   const arr = timeToMins(bus.arrival_time)
+  if (now > arr && bus.status !== 'breakdown' && bus.status !== 'delayed') return 'Trip completed'
   if (dep <= now && now <= arr) return 'En Route'
   if (bus.status === 'delayed') return `Delayed ${bus.delay_mins || 0} min`
   const diff = dep - now
@@ -297,7 +313,19 @@ export default function Buses() {
         )}
 
         {!loading && filtered.map(group => {
-          const primaryBus = group.buses.find(b => b.status === 'running') || group.buses[0]
+          // Primary bus: prefer running now, then next upcoming, never a completed trip
+          const now_m = nowISTMins()
+          const primaryBus =
+            group.buses.find(b => {
+              const d = timeToMins(b.departure_time), a = timeToMins(b.arrival_time)
+              return d <= now_m && now_m <= a  // currently mid-journey
+            }) ||
+            group.buses.find(b => {
+              const d = timeToMins(b.departure_time)
+              return d > now_m  // next upcoming departure
+            }) ||
+            group.buses.find(b => b.status === 'running') ||
+            group.buses[0]
           const occPct = primaryBus ? Math.min(100, Math.round((primaryBus.seats_occupied / group.capacity) * 100)) : 0
           const isExpanded = expanded[group.route_no]
 
@@ -374,7 +402,7 @@ export default function Buses() {
                 {group.buses.slice(0, isExpanded ? group.buses.length : 3).map((bus, idx) => {
                   const bPct = Math.min(100, Math.round((bus.seats_occupied / group.capacity) * 100))
                   return (
-                    <div key={bus.id} style={{ padding: '7px 14px', background: idx % 2 === 0 ? 'white' : 'var(--gray)', display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #F0F4FA' }}>
+                    <div key={bus.id} style={{ padding: '7px 14px', background: (() => { const n=nowISTMins(),a=timeToMins(bus.arrival_time); return n>a&&bus.status!=='breakdown'&&bus.status!=='delayed' ? '#F8F8F8' : idx%2===0?'white':'var(--gray)' })(), display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #F0F4FA', opacity: (() => { const n=nowISTMins(),a=timeToMins(bus.arrival_time); return n>a&&bus.status!=='breakdown'&&bus.status!=='delayed' ? 0.45 : 1 })() }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', minWidth: 100 }}>{bus.registration}</div>
                       <div style={{ fontSize: 11, color: 'var(--mute)', flex: 1 }}>🕐 {bus.departure_time}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -385,7 +413,17 @@ export default function Buses() {
                       </div>
                       <div style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: STATUS_BG[bus.status] || '#F3F4F6', color: STATUS_COLORS[bus.status] || 'var(--mute)', textTransform: 'uppercase' as const, display: 'flex', alignItems: 'center', gap: 3 }}>
                         {bus.status === 'running' && <span className="live-dot" style={{ width: 5, height: 5 }} />}
-                        {bus.status === 'running' ? 'RUNNING' : bus.status === 'delayed' ? 'DELAYED' : bus.status === 'breakdown' ? 'BREAKDOWN' : departsIn(bus)}
+                        {(() => {
+                          const n = nowISTMins()
+                          const d = timeToMins(bus.departure_time)
+                          const a = timeToMins(bus.arrival_time)
+                          const completed = n > a && bus.status !== 'breakdown' && bus.status !== 'delayed'
+                          if (completed) return 'COMPLETED'
+                          if (bus.status === 'running') return 'RUNNING'
+                          if (bus.status === 'delayed') return 'DELAYED'
+                          if (bus.status === 'breakdown') return 'BREAKDOWN'
+                          return departsIn(bus)
+                        })()}
                       </div>
                     </div>
                   )
