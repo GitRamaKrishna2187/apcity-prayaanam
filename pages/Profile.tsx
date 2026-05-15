@@ -13,7 +13,7 @@ export default function Profile() {
     mobile: '9848032919',
     email: 'bvassr.krishna@apgov.in',
     aadhaar: 'XXXX XXXX 6789',
-    dob: '1985-06-15',
+    dob: '1995-06-15',
     gender: 'Male',
     address: 'Flat 4B, Visakha Towers, MVP Colony, Visakhapatnam – 530017',
     preferredRoute: '900R — RTC Complex to Rushikonda',
