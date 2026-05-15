@@ -50,7 +50,9 @@ export default function EPass() {
   const nav = useNavigate()
   const { t } = useLang()
   const [screen, setScreen] = useState<Screen>('view')
-  const [passId] = useState(genPassId())
+  // submittedPassId is generated ONCE when the form is submitted, not on mount
+  // This ensures the poll always queries the same ID that was inserted into Supabase
+  const [submittedPassId, setSubmittedPassId] = useState<string>('')
   const [existingPass, setExistingPass] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [passStatus, setPassStatus] = useState<'pending'|'active'|'rejected'>('pending')
@@ -92,23 +94,22 @@ export default function EPass() {
     checkPass()
   }, [])
 
-  // ── Poll Supabase every 10 seconds when on submitted screen ────────────────
-  // Updates the QR badge from PENDING → ACTIVE (or REJECTED) once depot manager acts
+  // ── Realtime + polling when on submitted screen ─────────────────────────────
+  // Instant update via Supabase Realtime + 5s fallback polling
   useEffect(() => {
-    if (screen !== 'submitted') return
-    
-    async function pollStatus() {
+    if (screen !== 'submitted' || !submittedPassId) return
+
+    async function fetchStatus() {
       const { data } = await supabase
         .from('epasses')
-        .select('status, pass_id, updated_at')
-        .eq('pass_id', passId)
-        .single()
-      
-      if (data) {
+        .select('status, updated_at')
+        .eq('pass_id', submittedPassId)
+        .maybeSingle()
+
+      if (data && data.status) {
         setPassStatus(data.status as 'pending'|'active'|'rejected')
         if (data.status === 'active' || data.status === 'rejected') {
-          const d = new Date(data.updated_at)
-          setApprovedAt(d.toLocaleTimeString('en-IN', {
+          setApprovedAt(new Date(data.updated_at).toLocaleTimeString('en-IN', {
             hour: '2-digit', minute: '2-digit', hour12: true,
             timeZone: 'Asia/Kolkata'
           }))
@@ -116,11 +117,37 @@ export default function EPass() {
       }
     }
 
-    // Poll immediately then every 10 seconds
-    pollStatus()
-    const interval = setInterval(pollStatus, 10000)
-    return () => clearInterval(interval)
-  }, [screen, passId])
+    // 1. Fetch immediately
+    fetchStatus()
+
+    // 2. Poll every 5 seconds as primary mechanism
+    const interval = setInterval(fetchStatus, 5000)
+
+    // 3. Realtime subscription for instant update when depot manager approves
+    const channel = supabase
+      .channel('epass-status-' + submittedPassId)
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'epasses',
+        filter: 'pass_id=eq.' + submittedPassId,
+      }, (payload: any) => {
+        const s = payload.new.status as 'pending'|'active'|'rejected'
+        setPassStatus(s)
+        if (s === 'active' || s === 'rejected') {
+          setApprovedAt(new Date().toLocaleTimeString('en-IN', {
+            hour: '2-digit', minute: '2-digit', hour12: true,
+            timeZone: 'Asia/Kolkata'
+          }))
+        }
+      })
+      .subscribe()
+
+    return () => {
+      clearInterval(interval)
+      supabase.removeChannel(channel)
+    }
+  }, [screen, submittedPassId])
 
   const handleSubmit = async () => {
     if (!form.aadhaar || form.aadhaar.length < 12) {
@@ -128,9 +155,12 @@ export default function EPass() {
       return
     }
     setSubmitting(true)
+    // Generate a fresh passId AT SUBMIT TIME — not at component mount
+    const newPassId = genPassId()
+    setSubmittedPassId(newPassId)
     // Insert into Supabase
     await supabase.from('epasses').insert({
-      pass_id: passId,
+      pass_id: newPassId,
       holder_name: form.fullName,
       aadhaar_last4: form.aadhaar.slice(-4),
       mobile: form.mobile,
@@ -305,7 +335,7 @@ export default function EPass() {
               border: '2px solid var(--blue)', borderRadius: 12,
               boxShadow: '0 4px 16px rgba(27,58,107,0.12)', marginBottom: 10,
             }}>
-              <QRCode value={passId} size={140} />
+              <QRCode value={submittedPassId || 'PENDING'} size={140} />
             </div>
 
             {/* Dynamic status badge — updates when depot manager approves */}
@@ -346,7 +376,7 @@ export default function EPass() {
                 fontFamily: 'monospace', fontSize: 13, color: 'var(--text)',
                 fontWeight: 600, marginTop: 3, letterSpacing: 0.5,
               }}>
-                {passId}
+                {submittedPassId}
               </div>
               <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 4 }}>
                 This QR will activate once the Depot Manager approves your application.
