@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
 import type { Language } from '../i18n/LanguageContext'
-import StatusBar from './StatusBar'
 
 interface Stop { stop_name: string; city: string }
 interface Announcement { id: string; message: string; type: string }
@@ -101,7 +100,11 @@ export default function Home() {
 
   return (
     <div className="phone-shell">
-      <StatusBar />
+      <div className="status-bar">
+        <span>9:41 AM</span>
+        <span>APCityPrayaanam • 4G</span>
+      </div>
+
       <div className="app-header">
         <div className="header-top">
           <div>
@@ -110,7 +113,7 @@ export default function Home() {
               <span style={{ color: 'var(--gold)', fontSize: 13, marginLeft: 6, fontWeight: 600, letterSpacing: 2 }}>PRAYAANAM</span>
             </div>
             <span className="app-sub">
-              {lang === 'te' ? 'ఏపీసిటీ ప్రయాణం — APSRTC' : lang === 'hi' ? 'एपीसिटी प्रयाणम — APSRTC' : 'APCity Prayaanam — APSRTC'}
+              {lang === 'te' ? 'ఏపీసిటీ ప్రయాణం' : lang === 'hi' ? 'एपीसिटी प्रयाणम' : 'APCity Prayaanam'}
             </span>
           </div>
           <div className="header-actions">
@@ -196,92 +199,6 @@ export default function Home() {
                   </div>
                 )}
               </div>
-             {/* Date chip */}
-              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                <div style={{
-                  padding: '7px 12px', border: '1.5px solid var(--blue)',
-                  borderRadius: 8, fontSize: 11, color: 'var(--blue)',
-                  display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer', fontWeight: 500,
-                }}>
-                  📅 {t('today')}
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                <div style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--light)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 700, color: 'var(--blue)', flexShrink: 0 }}>#</div>
-                <input className="form-input" value={routeNo}
-                  onChange={e => setRouteNo(e.target.value.toUpperCase())}
-                  placeholder={t('routeNo')}
-                  style={{ flex: 1, fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 600, letterSpacing: 1 }}
-                  onKeyDown={e => e.key === 'Enter' && search()} />
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                {POPULAR_ROUTES.map(r => (
-                  <button key={r} onClick={() => setRouteNo(r)} style={{
-                    padding: '5px 12px', borderRadius: 20, border: '1.5px solid #D1DCF0',
-                    fontSize: 12, fontWeight: 600, color: 'var(--blue)', background: 'var(--light)', cursor: 'pointer',
-                  }}>{r}</button>
-                ))}
-              </div>
-            </>
-          )}
-
-          <button className="btn-primary" onClick={search} style={{ marginTop: 10 }}>
-            🔍 {t('searchBuses')}
-          </button>
-        </div>
-        <div className="apsrtc-watermark">APSRTC © 2025</div>
-      </div>
-
-      {/* SCROLLABLE CONTENT */}
-      <div className="scrollable">
-
-        {/* Quick actions */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, padding: 14 }}>
-          {[
-            { icon: '🪪', label: t('myEPass'), path: '/epass' },
-            { icon: '🚌', label: t('liveBuses'), path: '/buses' },
-            { icon: '📋', label: t('myTickets'), path: '/profile' },
-            { icon: '⏰', label: t('timetable'), path: '/timetable' },
-          ].map((a, i) => (
-            <button key={i} onClick={() => nav(a.path)} style={{
-              background: 'white', borderRadius: 12, padding: '12px 6px',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-              cursor: 'pointer', boxShadow: 'var(--shadow)', border: 'none',
-            }}>
-              <div style={{ fontSize: 22 }}>{a.icon}</div>
-              <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--mute)', textAlign: 'center' }}>{a.label}</div>
-            </button>
-          ))}
-        </div>
-
-        {/* Announcement */}
-        {ann && (
-          <div style={{
-            margin: '0 14px 14px', background: 'white', borderRadius: 10, padding: '10px 14px',
-            borderLeft: `4px solid ${annColors[ann.type] || 'var(--blue)'}`,
-            boxShadow: 'var(--shadow)', display: 'flex', alignItems: 'flex-start', gap: 10,
-          }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>
-              {ann.type === 'warning' ? '⚠️' : ann.type === 'success' ? '✅' : '📢'}
-            </span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.5 }}>{ann.message}</div>
-              {announcements.length > 1 && (
-                <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-                  {announcements.map((_, i) => (
-                    <div key={i} onClick={() => setAnnIdx(i)} style={{
-                      width: i === annIdx ? 16 : 6, height: 6, borderRadius: 3,
-                      background: i === annIdx ? 'var(--blue)' : '#D1DCF0',
-                      transition: 'width 0.3s', cursor: 'pointer',
-                    }} />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
         )}
 
         {/* Recent searches */}
