@@ -92,8 +92,17 @@ function minsToTimeStr(totalMins: number): string {
 
 /**
  * Calculate which stop_index the bus is currently at based on IST time.
- * Uses linear interpolation: elapsed / total_duration * num_stops.
- * This is the single source of truth — database current_stop_index is ignored.
+ *
+ * KEY FIX: Instead of linear interpolation (which causes off-by-one errors
+ * because stop display times and index calculation used different divisors),
+ * this function now:
+ * 1. Computes the scheduled time for each stop (same formula as calcStopTime)
+ * 2. Finds the LAST stop whose scheduled time <= current IST time
+ * 3. This guarantees BUS HERE always shows the stop the bus has REACHED,
+ *    never a future stop.
+ *
+ * Example: Route 99K at 10:52 AM, stops at 10:15/10:27/10:39/10:51/11:03/11:15
+ * Last stop <= 10:52 is Stop 4 (10:51) → BUS HERE at Stop 4, NOT Stop 5 (11:03)
  */
 function calcCurrentStopIndex(
   depTime: string,
@@ -105,25 +114,31 @@ function calcCurrentStopIndex(
   if (busStatus === 'depot') return 1
   if (totalStops <= 1) return 1
 
-  const now    = nowISTMins()
-  const dep    = timeStrToMins(depTime) + (delayMins || 0)
-  const arr    = timeStrToMins(arrTime) + (delayMins || 0)
-  const dur    = arr - dep
+  const now = nowISTMins()
+  const dep = timeStrToMins(depTime) + (delayMins || 0)
+  const arr = timeStrToMins(arrTime) + (delayMins || 0)
 
-  if (dur <= 0) return 1
-  if (now < dep) return 1           // not departed yet
-  if (now >= arr) return totalStops // completed journey
+  if (now < dep) return 1            // bus hasn't departed yet
+  if (now >= arr) return totalStops  // trip completed
 
-  const elapsed  = now - dep
-  const progress = elapsed / dur    // 0.0 to 1.0
-
-  // Map progress to stop index (1-based)
-  const idx = Math.max(1, Math.min(totalStops, Math.floor(progress * totalStops) + 1))
-  return idx
+  // Find the last stop whose scheduled time <= now
+  let currentStop = 1
+  for (let i = 1; i <= totalStops; i++) {
+    const scheduled = stopScheduledMins(depTime, arrTime, i, totalStops, delayMins)
+    if (scheduled <= now) {
+      currentStop = i
+    } else {
+      break  // stops are in order, so once we hit a future stop we can stop
+    }
+  }
+  return currentStop
 }
 
 /**
- * Calculate stop time for a given stop index using linear interpolation.
+ * Calculate stop time for a given stop index.
+ * Uses totalStops as divisor so intervals are even across ALL stops.
+ * Stop 1 = departure time, Stop N = arrival time,
+ * intermediate stops spaced evenly between them.
  */
 function calcStopTime(
   depTime: string,
@@ -136,8 +151,31 @@ function calcStopTime(
   const arr = timeStrToMins(arrTime) + (delayMins || 0)
   const dur = arr - dep
   if (totalStops <= 1) return depTime
+  if (stopIdx === 1) return minsToTimeStr(dep)
+  if (stopIdx >= totalStops) return minsToTimeStr(arr)
+  // Evenly distribute intermediate stops
   const segMins = Math.round((dur / (totalStops - 1)) * (stopIdx - 1))
   return minsToTimeStr(dep + segMins)
+}
+
+/**
+ * Calculate the scheduled time (in minutes) for a stop index.
+ * Matches calcStopTime exactly so display time == position logic.
+ */
+function stopScheduledMins(
+  depTime: string,
+  arrTime: string,
+  stopIdx: number,
+  totalStops: number,
+  delayMins: number
+): number {
+  const dep = timeStrToMins(depTime) + (delayMins || 0)
+  const arr = timeStrToMins(arrTime) + (delayMins || 0)
+  const dur = arr - dep
+  if (totalStops <= 1) return dep
+  if (stopIdx === 1) return dep
+  if (stopIdx >= totalStops) return arr
+  return dep + Math.round((dur / (totalStops - 1)) * (stopIdx - 1))
 }
 
 /**
