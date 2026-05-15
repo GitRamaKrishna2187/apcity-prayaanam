@@ -53,6 +53,8 @@ export default function EPass() {
   const [passId] = useState(genPassId())
   const [existingPass, setExistingPass] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [passStatus, setPassStatus] = useState<'pending'|'active'|'rejected'>('pending')
+  const [approvedAt, setApprovedAt] = useState<string>('')
 
   const getIST = () => new Date().toLocaleTimeString('en-IN', {
     hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
@@ -89,6 +91,36 @@ export default function EPass() {
     }
     checkPass()
   }, [])
+
+  // ── Poll Supabase every 10 seconds when on submitted screen ────────────────
+  // Updates the QR badge from PENDING → ACTIVE (or REJECTED) once depot manager acts
+  useEffect(() => {
+    if (screen !== 'submitted') return
+    
+    async function pollStatus() {
+      const { data } = await supabase
+        .from('epasses')
+        .select('status, pass_id, updated_at')
+        .eq('pass_id', passId)
+        .single()
+      
+      if (data) {
+        setPassStatus(data.status as 'pending'|'active'|'rejected')
+        if (data.status === 'active' || data.status === 'rejected') {
+          const d = new Date(data.updated_at)
+          setApprovedAt(d.toLocaleTimeString('en-IN', {
+            hour: '2-digit', minute: '2-digit', hour12: true,
+            timeZone: 'Asia/Kolkata'
+          }))
+        }
+      }
+    }
+
+    // Poll immediately then every 10 seconds
+    pollStatus()
+    const interval = setInterval(pollStatus, 10000)
+    return () => clearInterval(interval)
+  }, [screen, passId])
 
   const handleSubmit = async () => {
     if (!form.aadhaar || form.aadhaar.length < 12) {
@@ -154,39 +186,79 @@ export default function EPass() {
 
         <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 130px)' }}>
 
-          {/* Success message */}
-          <div style={{ margin: 14, background: '#E8F5E9', border: '1.5px solid var(--green)', borderRadius: 12, padding: 16, textAlign: 'center' }}>
-            <div style={{ fontSize: 40, marginBottom: 8 }}>✅</div>
-            <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700, color: 'var(--green)', marginBottom: 6 }}>
-              Application Submitted Successfully!
+          {/* Dynamic banner — updates on approval */}
+          <div style={{ 
+            margin: 14, 
+            background: passStatus === 'active' ? '#E8F5E9' : passStatus === 'rejected' ? '#FDECEA' : '#E8F5E9', 
+            border: `1.5px solid ${passStatus === 'active' ? 'var(--green)' : passStatus === 'rejected' ? '#C0392B' : 'var(--green)'}`, 
+            borderRadius: 12, padding: 16, textAlign: 'center' 
+          }}>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>
+              {passStatus === 'active' ? '🎉' : passStatus === 'rejected' ? '❌' : '✅'}
             </div>
-            <div style={{ fontSize: 13, color: '#2E7D32', lineHeight: 1.6 }}>
-              Your ePass application is now waiting for approval at the Depot Manager login.
-              You will receive an SMS confirmation once approved.
+            <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700, 
+                         color: passStatus === 'active' ? 'var(--green)' : passStatus === 'rejected' ? '#C0392B' : 'var(--green)', 
+                         marginBottom: 6 }}>
+              {passStatus === 'active' ? 'ePass Approved! Ready to Use.' : 
+               passStatus === 'rejected' ? 'Application Rejected' :
+               'Application Submitted Successfully!'}
+            </div>
+            <div style={{ fontSize: 13, color: passStatus === 'rejected' ? '#C0392B' : '#2E7D32', lineHeight: 1.6 }}>
+              {passStatus === 'active' 
+                ? `Your ePass was approved at ${approvedAt}. Show the QR code below to the conductor to board any APSRTC city bus.`
+                : passStatus === 'rejected'
+                ? 'Your application was rejected by the depot manager. Please check your details and apply again.'
+                : 'Your ePass application is waiting for approval at the Depot Manager login. This page updates automatically every 10 seconds.'}
             </div>
           </div>
 
           {/* Status tracker */}
           <div style={{ margin: '0 14px 12px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 14 }}>
-              Application Status
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Application Status</span>
+              {passStatus === 'pending' && (
+                <span style={{ fontSize: 10, color: '#4CAF50', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span className="live-dot" style={{ width: 6, height: 6 }}/>
+                  Checking every 10s
+                </span>
+              )}
             </div>
             {[
-              { label: 'Application submitted', sub: `${time} today`, done: true },
-              { label: 'Waiting for Depot Manager approval', sub: 'Madhurawada Depot — Visakhapatnam', done: false, current: true },
-              { label: 'ePass will be activated', sub: 'QR code sent via SMS after approval', done: false },
-            ].map((step, i, arr) => (
+              { 
+                label: 'Application submitted', 
+                sub: `${time} today`, 
+                done: true,
+                current: false
+              },
+              { 
+                label: passStatus === 'active' ? 'Approved by Depot Manager' : 
+                       passStatus === 'rejected' ? 'Rejected by Depot Manager' :
+                       'Waiting for Depot Manager approval', 
+                sub: passStatus === 'active' ? `Approved at ${approvedAt} — Madhurawada Depot` :
+                     passStatus === 'rejected' ? `Rejected at ${approvedAt} — check SMS for reason` :
+                     'Madhurawada Depot — Visakhapatnam',
+                done: passStatus === 'active' || passStatus === 'rejected',
+                current: passStatus === 'pending',
+                rejected: passStatus === 'rejected',
+              },
+              { 
+                label: passStatus === 'active' ? 'ePass activated — QR code is live' : 'ePass will be activated', 
+                sub: passStatus === 'active' ? 'Scan the QR code above to board any APSRTC city bus' : 'QR code activates after depot manager approval',
+                done: passStatus === 'active',
+                current: false
+              },
+            ].map((step: any, i, arr) => (
               <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', paddingBottom: i < arr.length - 1 ? 0 : 4 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 24 }}>
                   <div style={{
                     width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
-                    background: step.done ? 'var(--green)' : step.current ? 'var(--gold)' : '#E2E8F0',
-                    border: `2px solid ${step.done ? 'var(--green)' : step.current ? 'var(--gold)' : '#D1DCF0'}`,
+                    background: step.rejected ? '#C0392B' : step.done ? 'var(--green)' : step.current ? 'var(--gold)' : '#E2E8F0',
+                    border: `2px solid ${step.rejected ? '#C0392B' : step.done ? 'var(--green)' : step.current ? 'var(--gold)' : '#D1DCF0'}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 11, color: step.done ? 'white' : step.current ? 'var(--blue)' : 'var(--mute)',
                     fontWeight: 700,
                   }}>
-                    {step.done ? '✓' : step.current ? '⏳' : '○'}
+                    {step.rejected ? '✗' : step.done ? '✓' : step.current ? '⏳' : '○'}
                   </div>
                   {i < arr.length - 1 && (
                     <div style={{ width: 2, height: 28, background: step.done ? 'var(--green)' : '#E2E8F0', margin: '2px 0' }} />
@@ -236,14 +308,32 @@ export default function EPass() {
               <QRCode value={passId} size={140} />
             </div>
 
-            {/* Pending badge over QR */}
-            <div style={{
-              display: 'inline-block', background: '#FFF3E0', color: '#E65100',
-              border: '1.5px solid #FFB74D', borderRadius: 20, fontSize: 11,
-              fontWeight: 700, padding: '4px 14px', marginBottom: 10, marginLeft: 8,
-            }}>
-              ⏳ PENDING APPROVAL
-            </div>
+            {/* Dynamic status badge — updates when depot manager approves */}
+            {passStatus === 'active' ? (
+              <div style={{
+                display: 'inline-block', background: '#E8F5E9', color: '#1A7A4A',
+                border: '1.5px solid #4CAF50', borderRadius: 20, fontSize: 11,
+                fontWeight: 700, padding: '4px 14px', marginBottom: 10, marginLeft: 8,
+              }}>
+                ✅ APPROVED — PASS ACTIVE
+              </div>
+            ) : passStatus === 'rejected' ? (
+              <div style={{
+                display: 'inline-block', background: '#FDECEA', color: '#C0392B',
+                border: '1.5px solid #EF9A9A', borderRadius: 20, fontSize: 11,
+                fontWeight: 700, padding: '4px 14px', marginBottom: 10, marginLeft: 8,
+              }}>
+                ✗ APPLICATION REJECTED
+              </div>
+            ) : (
+              <div style={{
+                display: 'inline-block', background: '#FFF3E0', color: '#E65100',
+                border: '1.5px solid #FFB74D', borderRadius: 20, fontSize: 11,
+                fontWeight: 700, padding: '4px 14px', marginBottom: 10, marginLeft: 8,
+              }}>
+                ⏳ PENDING APPROVAL
+              </div>
+            )}
 
             <div style={{ marginTop: 6 }}>
               <div style={{
