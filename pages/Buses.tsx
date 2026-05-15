@@ -73,16 +73,17 @@ function timeToMins(t: string): number {
   return h * 60 + m
 }
 
-// Show bus if: mid-journey, departing within 3h, delayed, breakdown
+// Show bus if: mid-journey, departing within window, delayed, breakdown
 // NEVER show completed trips (arrival time passed)
-function isRelevantBus(bus: BusRow): boolean {
+// window: 60 min for live view, 180 min for route search results
+function isRelevantBus(bus: BusRow, windowMins = 60): boolean {
   const now = nowISTMins()
   const dep = timeToMins(bus.departure_time)
   const arr = timeToMins(bus.arrival_time)
   // Completed trip — exclude unless breakdown/delayed
   if (now > arr && bus.status !== 'delayed' && bus.status !== 'breakdown') return false
-  if (dep <= now && now <= arr) return true      // mid-journey
-  if (dep > now && dep - now <= 180) return true // departing within 3h
+  if (dep <= now && now <= arr) return true               // mid-journey right now
+  if (dep > now && dep - now <= windowMins) return true  // departing within window
   if (bus.status === 'delayed') return true
   if (bus.status === 'breakdown') return true
   return false
@@ -208,7 +209,8 @@ export default function Buses() {
       // ── Assign buses to routes, filter to relevant only ─────────────────────
       const grouped: RouteGroup[] = matchedRoutes.map(r => {
         const allBuses = (busData || []).filter(b => b.route_no === r.route_no)
-        const relevant = allBuses.filter(isRelevantBus)
+        const window = (fromParam && toParam) ? 180 : 60
+        const relevant = allBuses.filter(b => isRelevantBus(b, window))
         // If no relevant buses, show next 2 upcoming
         const display = relevant.length > 0
           ? relevant
