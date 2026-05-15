@@ -87,12 +87,14 @@ export default function EPass() {
         .from('epasses')
         .select('*')
         .eq('status', 'active')
+        .order('created_at', { ascending: false })
         .limit(1)
       if (data && data.length > 0) setExistingPass(data[0])
+      else setExistingPass(null)
       setLoading(false)
     }
-    checkPass()
-  }, [])
+    if (screen === 'view') checkPass()
+  }, [screen])
 
   // ── Realtime + polling when on submitted screen ─────────────────────────────
   // Instant update via Supabase Realtime + 5s fallback polling
@@ -113,6 +115,15 @@ export default function EPass() {
             hour: '2-digit', minute: '2-digit', hour12: true,
             timeZone: 'Asia/Kolkata'
           }))
+          if (data.status === 'active') {
+            supabase.from('epasses').select('*')
+              .eq('status', 'active')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .then(({ data: latest }) => {
+                if (latest && latest[0]) setExistingPass(latest[0])
+              })
+          }
         }
       }
     }
