@@ -259,24 +259,36 @@ export default function BusDetail() {
           const found = bRes.data.find(b => b.id === busId)
           if (found) { setSelBus(found); setLastSync(0); return }
         }
-        // Smart bus selection:
-        // 1. Prefer bus currently mid-journey (dep <= now <= arr)
-        // 2. Then next upcoming departure
-        // 3. Then any running status
-        // 4. Never auto-select a completed trip as primary
+        // Smart bus selection — NEVER auto-select a completed trip:
+        // Priority: mid-journey now > next upcoming > any non-completed > first bus
         const now = nowISTMins()
-        const midJourney = bRes.data.find(b => {
+
+        // Sort buses by departure time ascending for consistent ordering
+        const sorted = [...bRes.data].sort((a, b) =>
+          timeStrToMins(a.departure_time) - timeStrToMins(b.departure_time))
+
+        // 1. Bus currently mid-journey right now
+        const midJourney = sorted.find(b => {
           const dep = timeStrToMins(b.departure_time)
           const arr = timeStrToMins(b.arrival_time)
           return dep <= now && now <= arr
         })
-        const nextUpcoming = bRes.data.find(b => {
+
+        // 2. Next bus yet to depart (soonest future departure)
+        const nextDeparture = sorted.find(b => {
           const dep = timeStrToMins(b.departure_time)
           return dep > now
         })
-        const anyRunning = bRes.data.find(b => b.status === 'running')
-        const bestBus = midJourney || nextUpcoming || anyRunning || bRes.data[0]
+
+        // 3. Any non-completed bus (breakdown / delayed that may still need attention)
+        const nonCompleted = sorted.find(b => {
+          const arr = timeStrToMins(b.arrival_time)
+          return now <= arr || b.status === 'breakdown' || b.status === 'delayed'
+        })
+
+        const bestBus = midJourney || nextDeparture || nonCompleted || sorted[0]
         setSelBus(bestBus || null)
+        setBuses(sorted)  // Use sorted order for selector display
       }
       setLastSync(0)
     } catch (e) { console.error(e) }
@@ -404,7 +416,17 @@ export default function BusDetail() {
       {buses.length > 1 && (
         <div style={{ background: 'white', padding: '10px 14px', borderBottom: '1px solid #EEF2F8' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: 0.3 }}>
-            Select bus — {buses.length} available
+            {(() => {
+              const nowM = nowISTMins()
+              const active = buses.filter(b => {
+                const arr = timeStrToMins(b.arrival_time)
+                return nowM <= arr || b.status === 'breakdown' || b.status === 'delayed'
+              }).length
+              const total = buses.length
+              return active < total
+                ? `Select bus — ${active} active · ${total - active} completed`
+                : `Select bus — ${total} available`
+            })()}
           </div>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
             {buses.map(b => {
@@ -436,7 +458,7 @@ export default function BusDetail() {
 
       <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 220px)' }}>
 
-        {/* Completed trip banner */}
+        {/* Completed trip banner — only shown if user manually selects a completed bus */}
         {busCompleted && (
           <div style={{
             margin: '12px 14px 0', padding: '12px 14px',
@@ -444,12 +466,12 @@ export default function BusDetail() {
             borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10,
           }}>
             <span style={{ fontSize: 20 }}>✅</span>
-            <div>
+            <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
                 Trip completed — arrived at {selBus?.arrival_time}
               </div>
-              <div style={{ fontSize: 11, color: '#4ADE80' }}>
-                Select another bus from the selector above to see a live trip
+              <div style={{ fontSize: 11, color: '#4ade80', marginTop: 2 }}>
+                Showing route history. Select an upcoming bus above for live tracking.
               </div>
             </div>
           </div>
@@ -502,11 +524,11 @@ export default function BusDetail() {
                   circleStyle = { ...circleStyle, width: 24, height: 24, background: 'var(--blue)', borderColor: 'var(--blue)', boxShadow: '0 0 0 4px rgba(27,58,107,0.18)' }
                   innerDot = <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'white' }} />
                   nameStyle = { ...nameStyle, fontWeight: 700, color: 'var(--blue)', fontSize: 14 }
-                  badge = <span style={{ display: 'inline-block', background: 'var(--blue)', color: 'white', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10, marginLeft: 6, verticalAlign: 'middle' }}>🚌 {t('busHere')}</span>
+                  badge = null  // Blue filled circle is sufficient — no text badge needed
                   connStyle = { ...connStyle, background: 'linear-gradient(to bottom, var(--blue), #E2E8F0)' }
                 } else if (isDestination && !isPassed && !isCurrent) {
                   nameStyle = { ...nameStyle, fontWeight: 600 }
-                  badge = <span style={{ display: 'inline-block', background: '#FDECEA', color: '#C0392B', fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 10, marginLeft: 6, verticalAlign: 'middle' }}>🏁 {t('destination')}</span>
+                  badge = null  // Red circle and DESTINATION label in stop name is sufficient
                 }
 
                 return (
