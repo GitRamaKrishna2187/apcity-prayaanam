@@ -331,7 +331,7 @@ export default function Buses() {
 
           return (
             <div key={group.route_no} style={{ background: 'white', borderRadius: 12, margin: '0 14px 12px', boxShadow: 'var(--shadow)', overflow: 'hidden', border: '1.5px solid transparent', cursor: 'pointer', transition: 'border-color 0.2s' }}
-              onClick={() => nav(`/bus/${group.route_no}`)}
+              onClick={() => nav(`/bus?route=${encodeURIComponent(group.route_no)}`)}
               onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--blue)')}
               onMouseLeave={e => (e.currentTarget.style.borderColor = 'transparent')}>
 
@@ -386,7 +386,7 @@ export default function Buses() {
                     <div style={{ fontSize: 13, fontWeight: 700, color: primaryBus.status === 'running' ? '#1A7A4A' : 'var(--blue)' }}>{departsIn(primaryBus)}</div>
                   </div>
                 )}
-                <button onClick={e => { e.stopPropagation(); nav(`/bus/${group.route_no}`) }}
+                <button onClick={e => { e.stopPropagation(); nav(`/bus?route=${encodeURIComponent(group.route_no)}`) }}
                   style={{ background: 'var(--blue)', color: 'white', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginLeft: 10 }}>
                   View →
                 </button>
