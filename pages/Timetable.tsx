@@ -273,14 +273,11 @@ export default function Timetable() {
                         )}
                       </div>
                     </div>
-                    </div>
                     </>
                   )
                 })}
 
-                {!showAll && (upcoming.length > 15 || past.length > 0) && (
-                                  {/* All trips shown by default */}
-                )}
+
 
                 <button onClick={() => nav(`/buses?route=${selRoute}`)}
                   style={{ width: '100%', padding: 12, background: 'var(--blue)', color: 'white', border: 'none', borderRadius: 10, fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, cursor: 'pointer', marginTop: 4 }}>
