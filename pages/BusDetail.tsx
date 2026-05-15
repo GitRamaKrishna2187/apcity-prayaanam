@@ -221,14 +221,24 @@ export default function BusDetail() {
           const found = bRes.data.find(b => b.id === busId)
           if (found) { setSelBus(found); setLastSync(0); return }
         }
-        // Prefer currently running bus
+        // Smart bus selection:
+        // 1. Prefer bus currently mid-journey (dep <= now <= arr)
+        // 2. Then next upcoming departure
+        // 3. Then any running status
+        // 4. Never auto-select a completed trip as primary
         const now = nowISTMins()
-        const running = bRes.data.find(b => {
+        const midJourney = bRes.data.find(b => {
           const dep = timeStrToMins(b.departure_time)
           const arr = timeStrToMins(b.arrival_time)
           return dep <= now && now <= arr
-        }) || bRes.data.find(b => b.status === 'running') || bRes.data[0]
-        setSelBus(running || null)
+        })
+        const nextUpcoming = bRes.data.find(b => {
+          const dep = timeStrToMins(b.departure_time)
+          return dep > now
+        })
+        const anyRunning = bRes.data.find(b => b.status === 'running')
+        const bestBus = midJourney || nextUpcoming || anyRunning || bRes.data[0]
+        setSelBus(bestBus || null)
       }
       setLastSync(0)
     } catch (e) { console.error(e) }
@@ -261,7 +271,16 @@ export default function BusDetail() {
 
   // ── KEY FIX: compute stop index from IST time, not from database ──────────
   const totalStops = stops.length || 5
-  const currentIdx = selBus
+
+  // Check if selected bus trip is already completed
+  const busCompleted = selBus
+    ? nowISTMins() > timeStrToMins(selBus.arrival_time) &&
+      selBus.status !== 'breakdown' && selBus.status !== 'delayed'
+    : false
+
+  const currentIdx = busCompleted
+    ? totalStops + 1   // beyond last stop — all stops show as passed, no BUS HERE
+    : selBus
     ? calcCurrentStopIndex(
         selBus.departure_time,
         selBus.arrival_time,
@@ -329,9 +348,16 @@ export default function BusDetail() {
           <div style={{ background: '#E8F5E9', color: '#1A7A4A', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
             {formatDuration(route.duration_mins)}
           </div>
-          <div style={{ background: isCurrentlyRunning ? '#E8F5E9' : hasNotDeparted ? '#EFF6FF' : '#F3F4F6', color: isCurrentlyRunning ? '#1A7A4A' : hasNotDeparted ? '#1B3A6B' : '#7A8BA6', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
+          <div style={{
+            background: isCurrentlyRunning ? '#E8F5E9' : hasCompleted ? '#F3F4F6' : hasNotDeparted ? '#EFF6FF' : '#F3F4F6',
+            color: isCurrentlyRunning ? '#1A7A4A' : hasCompleted ? '#6B7280' : hasNotDeparted ? '#1B3A6B' : '#7A8BA6',
+            fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20
+          }}>
             {isCurrentlyRunning && <span className="live-dot" style={{ width: 5, height: 5, marginRight: 3 }} />}
-            {isCurrentlyRunning ? 'Running' : hasNotDeparted ? `Departs in ${depMins - now} min` : hasCompleted ? 'Trip completed' : statusInfo.label}
+            {isCurrentlyRunning ? 'Running'
+              : hasCompleted    ? '✓ Trip completed'
+              : hasNotDeparted  ? `Departs in ${depMins - now} min`
+              : statusInfo.label}
           </div>
         </div>
       </div>
@@ -346,17 +372,23 @@ export default function BusDetail() {
             {buses.map(b => {
               const bDep = timeStrToMins(b.departure_time)
               const bArr = timeStrToMins(b.arrival_time)
-              const bRunning = bDep <= now && now <= bArr
+              const bRunning   = bDep <= now && now <= bArr
+              const bCompleted = now > bArr && b.status !== 'breakdown' && b.status !== 'delayed'
+              const bUpcoming  = bDep > now
               return (
                 <button key={b.id} onClick={() => setSelBus(b)} style={{
                   padding: '5px 12px', borderRadius: 20,
-                  border: `1.5px solid ${selBus?.id === b.id ? 'var(--blue)' : '#E2E8F0'}`,
-                  background: selBus?.id === b.id ? 'var(--blue)' : bRunning ? '#E8F5E9' : 'white',
-                  color: selBus?.id === b.id ? 'white' : bRunning ? '#1A7A4A' : 'var(--text)',
+                  border: `1.5px solid ${selBus?.id === b.id ? 'var(--blue)' : bCompleted ? '#E5E7EB' : '#E2E8F0'}`,
+                  background: selBus?.id === b.id ? 'var(--blue)' : bRunning ? '#E8F5E9' : bCompleted ? '#F9FAFB' : 'white',
+                  color: selBus?.id === b.id ? 'white' : bRunning ? '#1A7A4A' : bCompleted ? '#9CA3AF' : 'var(--text)',
                   fontSize: 11, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                  textDecoration: bCompleted ? 'line-through' : 'none',
+                  opacity: bCompleted ? 0.6 : 1,
                 }}>
                   {bRunning && <span className="live-dot" style={{ width: 5, height: 5, marginRight: 3 }} />}
+                  {bCompleted && <span style={{ marginRight: 3 }}>✓</span>}
                   {b.registration} · {b.departure_time}
+                  {bCompleted ? ' (done)' : bUpcoming ? '' : ''}
                 </button>
               )
             })}
@@ -365,6 +397,25 @@ export default function BusDetail() {
       )}
 
       <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 220px)' }}>
+
+        {/* Completed trip banner */}
+        {busCompleted && (
+          <div style={{
+            margin: '12px 14px 0', padding: '12px 14px',
+            background: '#F0FDF4', border: '1.5px solid #86EFAC',
+            borderRadius: 10, display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <span style={{ fontSize: 20 }}>✅</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
+                Trip completed — arrived at {selBus?.arrival_time}
+              </div>
+              <div style={{ fontSize: 11, color: '#4ADE80' }}>
+                Select another bus from the selector above to see a live trip
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ROUTE TRACKER — IST-correct */}
         <div style={{ background: 'white', margin: 14, borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
