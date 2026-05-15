@@ -197,7 +197,7 @@ export default function EPass() {
 
   if (loading) return (
     <div className="phone-shell">
-      <div className="status-bar"><span>{time}</span><span>APSRTC APCityPrayaanam • 4G</span></div>
+      <div className="status-bar"><span>{time}</span><span>APCityPrayaanam • 4G</span></div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: 'var(--mute)', fontSize: 13 }}>
         Loading...
       </div>
@@ -210,7 +210,7 @@ export default function EPass() {
       <div className="phone-shell screen-enter">
         <div className="status-bar">
           <span>{time}</span>
-          <span>APSRTC APCityPrayaanam • 4G</span>
+          <span>APCityPrayaanam • 4G</span>
         </div>
 
         <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
@@ -246,7 +246,7 @@ export default function EPass() {
             </div>
             <div style={{ fontSize: 13, color: passStatus === 'rejected' ? '#C0392B' : '#2E7D32', lineHeight: 1.6 }}>
               {passStatus === 'active' 
-                ? `Your ePass was approved at ${approvedAt}. Show the QR code below to the conductor to board any APSRTC city bus.`
+                ? `Your ePass was approved at ${approvedAt}. Show the QR code below to the conductor to board any city bus.`
                 : passStatus === 'rejected'
                 ? 'Your application was rejected by the depot manager. Please check your details and apply again.'
                 : 'Your ePass application is waiting for approval at the Depot Manager login. This page updates automatically every 10 seconds.'}
@@ -284,7 +284,7 @@ export default function EPass() {
               },
               { 
                 label: passStatus === 'active' ? 'ePass activated — QR code is live' : 'ePass will be activated', 
-                sub: passStatus === 'active' ? 'Scan the QR code above to board any APSRTC city bus' : 'QR code activates after depot manager approval',
+                sub: passStatus === 'active' ? 'Scan the QR code above to board any city bus' : 'QR code activates after depot manager approval',
                 done: passStatus === 'active',
                 current: false
               },
@@ -420,7 +420,7 @@ export default function EPass() {
       <div className="phone-shell screen-enter">
         <div className="status-bar">
           <span>{time}</span>
-          <span>APSRTC APCityPrayaanam • 4G</span>
+          <span>APCityPrayaanam • 4G</span>
         </div>
 
         <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
@@ -541,7 +541,7 @@ export default function EPass() {
     <div className="phone-shell screen-enter">
       <div className="status-bar">
         <span>{time}</span>
-        <span>APSRTC APCityPrayaanam • 4G</span>
+        <span>APCityPrayaanam • 4G</span>
       </div>
 
       <div style={{ background: 'var(--blue)', padding: '0 16px 14px' }}>
