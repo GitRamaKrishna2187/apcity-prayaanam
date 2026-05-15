@@ -48,13 +48,6 @@ function countdown(dep: string): string {
   if (diff < 60) return `${diff} min`
   return `${Math.floor(diff/60)}h ${diff%60}m`
 }
-function countdown(dep: string): string {
-  const diff = toMins(dep) - nowISTMins()
-  if (diff < 0) return 'Departed'
-  if (diff === 0) return 'Now'
-  if (diff < 60) return `${diff} min`
-  return `${Math.floor(diff/60)}h ${diff%60}m`
-}
 function formatDur(m: number) {
   const h = Math.floor(m/60), r = m%60
   return h === 0 ? `${r} min` : r > 0 ? `${h}h ${r}min` : `${h}h`
