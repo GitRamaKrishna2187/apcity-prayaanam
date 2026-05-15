@@ -35,6 +35,19 @@ function fmt(t: string): string {
   const [h, m] = t.split(':').map(Number)
   return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${h >= 12 ? 'PM' : 'AM'}`
 }
+
+function isRunning(dep: string, arr: string): boolean {
+  const n = nowISTMins()
+  return toMins(dep) <= n && n <= toMins(arr)
+}
+
+function countdown(dep: string): string {
+  const diff = toMins(dep) - nowISTMins()
+  if (diff < 0) return 'Departed'
+  if (diff === 0) return 'Now'
+  if (diff < 60) return `${diff} min`
+  return `${Math.floor(diff/60)}h ${diff%60}m`
+}
 function countdown(dep: string): string {
   const diff = toMins(dep) - nowISTMins()
   if (diff < 0) return 'Departed'
