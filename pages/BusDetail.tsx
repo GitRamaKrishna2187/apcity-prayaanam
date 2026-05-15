@@ -395,7 +395,7 @@ export default function BusDetail() {
           <div style={{ background: 'var(--light)', color: 'var(--blue)', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
             🕐 {selBus?.departure_time || '--'} → {selBus?.arrival_time || '--'}
           </div>
-          <div style={{ background: '#FFF8E1', color: '#9A6700', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>APSRTC</div>
+          <div style={{ background: '#FFF8E1', color: '#9A6700', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>City Bus</div>
           <div style={{ background: '#E8F5E9', color: '#1A7A4A', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
             {formatDuration(route.duration_mins)}
           </div>
