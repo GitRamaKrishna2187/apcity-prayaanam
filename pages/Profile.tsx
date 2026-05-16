@@ -10,10 +10,10 @@ export default function Profile() {
 
   const [profile, setProfile] = useState({
     name: 'Bhanu Gopal',
-    mobile: '9848032919',
+    mobile: 'xxxxxxx2919',
     email: 'bhanu.gopal@gmail.com',
     aadhaar: 'XXXX XXXX 6789',
-    dob: '1995-06-15',
+    dob: 'xxxx-xx-xx',
     gender: 'Male',
     address: 'Flat 4B, Visakha Towers, MVP Colony, Visakhapatnam – 530017',
     preferredRoute: '900R — RTC Complex to Rushikonda',
