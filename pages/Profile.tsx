@@ -9,9 +9,9 @@ export default function Profile() {
   const [activeTab, setActiveTab] = useState<'profile' | 'tickets'>('profile')
 
   const [profile, setProfile] = useState({
-    name: 'BVASSR KRISHNA',
+    name: 'Bhanu Gopal',
     mobile: '9848032919',
-    email: 'bvassr.krishna@apgov.in',
+    email: 'bhanu.gopal@gmail.com',
     aadhaar: 'XXXX XXXX 6789',
     dob: '1995-06-15',
     gender: 'Male',
@@ -19,7 +19,7 @@ export default function Profile() {
     preferredRoute: '900R — RTC Complex to Rushikonda',
     language: 'English',
     notifications: true,
-    upiId: 'bvassr@okaxis',
+    upiId: 'bhanugopal@okaxis',
   })
 
   const tickets = [
