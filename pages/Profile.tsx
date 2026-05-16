@@ -11,15 +11,15 @@ export default function Profile() {
   const [profile, setProfile] = useState({
     name: 'Bhanu Gopal',
     mobile: 'xxxxxxx2919',
-    email: 'bhanu.gopal@gmail.com',
+    email: 'xxxxx.gopal@gmail.com',
     aadhaar: 'XXXX XXXX 6789',
     dob: 'xxxx-xx-xx',
     gender: 'Male',
-    address: 'Flat 4B, Visakha Towers, MVP Colony, Visakhapatnam – 530017',
+    address: 'Flat 4B, xxxxx Towers, xxxxxxx Colony, Visakhapatnam – 530017',
     preferredRoute: '900R — RTC Complex to Rushikonda',
     language: 'English',
     notifications: true,
-    upiId: 'bhanugopal@okaxis',
+    upiId: 'xxxxgopal@okaxis',
   })
 
   const tickets = [
