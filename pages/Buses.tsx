@@ -136,7 +136,6 @@ export default function Buses() {
   const [lastSync, setLastSync]       = useState(0)
   const [typeFilter, setTypeFilter]   = useState('all')
   const [quickFilter, setQuickFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState<'all'|'running'|'upcoming'>('all')
   const [routeSearch, setRouteSearch] = useState(routeParam || '')
   const [expanded, setExpanded]       = useState<Record<string, boolean>>({})
 
@@ -246,27 +245,11 @@ export default function Buses() {
     return () => clearInterval(tick)
   }, [])
 
-  // IST-aware bus categorisation for status filter chips
-  function isRunningBus(b: BusRow): boolean {
-    const now = nowISTMins()
-    const dep = timeToMins(b.departure_time)
-    const arr = timeToMins(b.arrival_time)
-    return b.status === 'running' || (dep <= now && now <= arr)
-  }
-  function isUpcomingBus(b: BusRow): boolean {
-    const now = nowISTMins()
-    const dep = timeToMins(b.departure_time)
-    const arr = timeToMins(b.arrival_time)
-    const diff = dep - now
-    return diff > 0 && diff <= 120 && now < arr
-  }
-
   const filtered = groups.filter(g => {
     if (typeFilter !== 'all' && g.bus_type !== typeFilter) return false
     if (quickFilter === 'seats') return g.buses.some(b => Math.round((b.seats_occupied / g.capacity) * 100) < 85 && b.status === 'running')
     if (quickFilter === 'express') return g.bus_type === 'metro_express' || g.bus_type === 'metro_luxury'
-    if (statusFilter === 'running'  && !g.buses.some(isRunningBus))  return false
-    if (statusFilter === 'upcoming' && !g.buses.some(isUpcomingBus)) return false
+    // Route number search bar filter
     if (routeSearch.trim()) {
       const q = routeSearch.trim().toUpperCase()
       if (!g.route_no.toUpperCase().includes(q)) return false
@@ -292,7 +275,7 @@ export default function Buses() {
           <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
             {routeSearch
               ? `${filtered.length} route${filtered.length !== 1 ? 's' : ''} matching "${routeSearch}"`
-              : `${filtered.length} route${filtered.length !== 1 ? 's' : ''} · Visakhapatnam`}
+              : `${filtered.length} routes · ${runningCount} running · ${totalBuses} shown`}
           </div>
         </div>
         <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 20, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -357,72 +340,19 @@ export default function Buses() {
         </div>
       )}
 
-      {/* STATUS CHIPS — Running & Upcoming prominently below search bar */}
-      {(() => {
-        const now_m = nowISTMins()
-        const runningTotal  = groups.reduce((s, g) => s + g.buses.filter(isRunningBus).length, 0)
-        const upcomingTotal = groups.reduce((s, g) => s + g.buses.filter(isUpcomingBus).length, 0)
-        return (
-          <div style={{ display: 'flex', gap: 8, padding: '10px 14px 4px', alignItems: 'center' }}>
-            {/* Running chip */}
-            <button onClick={() => setStatusFilter(sf => sf === 'running' ? 'all' : 'running')} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '7px 14px', borderRadius: 22,
-              border: `1.5px solid ${statusFilter === 'running' ? '#1A7A4A' : '#D1DCF0'}`,
-              background: statusFilter === 'running' ? '#E8F5E9' : 'white',
-              color: statusFilter === 'running' ? '#1A7A4A' : 'var(--mute)',
-              fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              boxShadow: statusFilter === 'running' ? '0 0 0 2px rgba(26,122,74,0.15)' : 'none',
-              transition: 'all 0.15s',
-            }}>
-              <span className="live-dot" style={{ width: 7, height: 7, background: statusFilter === 'running' ? '#1A7A4A' : '#9CA3AF', flexShrink: 0 }} />
-              🚌 Running
-              <span style={{ background: statusFilter === 'running' ? '#1A7A4A' : '#E2E8F0', color: statusFilter === 'running' ? 'white' : 'var(--mute)', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700, marginLeft: 2 }}>
-                {runningTotal}
-              </span>
-            </button>
-
-            {/* Upcoming chip */}
-            <button onClick={() => setStatusFilter(sf => sf === 'upcoming' ? 'all' : 'upcoming')} style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '7px 14px', borderRadius: 22,
-              border: `1.5px solid ${statusFilter === 'upcoming' ? 'var(--blue)' : '#D1DCF0'}`,
-              background: statusFilter === 'upcoming' ? 'var(--light)' : 'white',
-              color: statusFilter === 'upcoming' ? 'var(--blue)' : 'var(--mute)',
-              fontSize: 12, fontWeight: 700, cursor: 'pointer',
-              boxShadow: statusFilter === 'upcoming' ? '0 0 0 2px rgba(27,58,107,0.12)' : 'none',
-              transition: 'all 0.15s',
-            }}>
-              ⏱ Upcoming
-              <span style={{ background: statusFilter === 'upcoming' ? 'var(--blue)' : '#E2E8F0', color: statusFilter === 'upcoming' ? 'white' : 'var(--mute)', borderRadius: 10, padding: '1px 7px', fontSize: 11, fontWeight: 700, marginLeft: 2 }}>
-                {upcomingTotal}
-              </span>
-            </button>
-
-            {/* Divider */}
-            <div style={{ width: 1, height: 20, background: '#E2E8F0', flexShrink: 0 }} />
-
-            {/* Seats / Express quick filters */}
-            {[{ id:'seats', label:'🟢 Seats' }, { id:'express', label:'⚡ Express' }].map(f => (
-              <button key={f.id} onClick={() => setQuickFilter(q => q === f.id ? 'all' : f.id)} style={{
-                padding: '7px 12px', borderRadius: 22, whiteSpace: 'nowrap' as const,
-                border: `1.5px solid ${quickFilter === f.id ? 'var(--blue)' : '#D1DCF0'}`,
-                background: quickFilter === f.id ? 'var(--blue)' : 'white',
-                color: quickFilter === f.id ? 'white' : 'var(--mute)',
-                fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-              }}>{f.label}</button>
-            ))}
-          </div>
-        )
-      })()}
-
-      <div style={{ padding: '6px 14px 0' }}>
+      <div style={{ padding: '10px 14px 0' }}>
         <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)} style={{ width: '100%', padding: '10px 14px', border: '1.5px solid #E2E8F0', borderRadius: 10, fontSize: 13, fontWeight: 500, color: 'var(--text)', background: 'white', cursor: 'pointer', appearance: 'auto', boxShadow: 'var(--shadow)' }}>
           <option value="all">🚌 All Bus Types</option>
           <option value="city_ordinary">🔵 City Ordinary</option>
           <option value="metro_express">🟡 Metro Express</option>
           <option value="metro_luxury">🟢 Metro Luxury (A/C)</option>
         </select>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, padding: '10px 14px', overflowX: 'auto' }}>
+        {[{ id:'all', label: t('allBuses') }, { id:'seats', label:'🟢 Available Seats' }, { id:'express', label:'⚡ Express' }].map(f => (
+          <button key={f.id} onClick={() => setQuickFilter(f.id)} style={{ padding: '6px 14px', borderRadius: 20, whiteSpace: 'nowrap', border: `1.5px solid ${quickFilter===f.id?'var(--blue)':'#D1DCF0'}`, background: quickFilter===f.id?'var(--blue)':'white', color: quickFilter===f.id?'white':'var(--mute)', fontSize: 12, fontWeight: 500, cursor: 'pointer' }}>{f.label}</button>
+        ))}
       </div>
 
       <div className="scrollable">
@@ -439,10 +369,6 @@ export default function Buses() {
             <div style={{ fontSize: 13, color: 'var(--mute)', marginBottom: 16 }}>
               {routeSearch
                 ? 'Try a different number — e.g. 900R, 400, 38J, 10K, 52S'
-                : statusFilter === 'running'
-                ? 'No buses are currently en route. Try "Upcoming" for buses departing soon.'
-                : statusFilter === 'upcoming'
-                ? 'No buses departing in the next 2 hours on this search.'
                 : fromParam && toParam
                 ? `No buses between ${fromParam} and ${toParam} right now`
                 : 'All routes have completed trips for this period'}
