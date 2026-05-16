@@ -136,6 +136,7 @@ export default function Buses() {
   const [lastSync, setLastSync]       = useState(0)
   const [typeFilter, setTypeFilter]   = useState('all')
   const [quickFilter, setQuickFilter] = useState('all')
+  const [routeSearch, setRouteSearch] = useState(routeParam || '')
   const [expanded, setExpanded]       = useState<Record<string, boolean>>({})
 
   const fetchData = useCallback(async () => {
@@ -232,6 +233,11 @@ export default function Buses() {
     const iv = setInterval(fetchData, 25000)
     return () => clearInterval(iv)
   }, [fetchData])
+
+  // Keep search bar in sync when URL route param changes (e.g. Popular Routes on Home)
+  useEffect(() => {
+    if (routeParam) setRouteSearch(routeParam)
+  }, [routeParam])
   useEffect(() => {
     const tick = setInterval(() => setLastSync(s => s + 1), 1000)
     return () => clearInterval(tick)
@@ -241,6 +247,11 @@ export default function Buses() {
     if (typeFilter !== 'all' && g.bus_type !== typeFilter) return false
     if (quickFilter === 'seats') return g.buses.some(b => Math.round((b.seats_occupied / g.capacity) * 100) < 85 && b.status === 'running')
     if (quickFilter === 'express') return g.bus_type === 'metro_express' || g.bus_type === 'metro_luxury'
+    // Route number search bar filter
+    if (routeSearch.trim()) {
+      const q = routeSearch.trim().toUpperCase()
+      if (!g.route_no.toUpperCase().includes(q)) return false
+    }
     return true
   })
 
@@ -259,12 +270,54 @@ export default function Buses() {
         <button onClick={() => nav('/')} style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.15)', border: 'none', color: 'white', fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>←</button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{headerTitle}</div>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>{filtered.length} routes · {runningCount} running · {totalBuses} shown</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+            {routeSearch
+              ? `${filtered.length} route${filtered.length !== 1 ? 's' : ''} matching "${routeSearch}"`
+              : `${filtered.length} routes · ${runningCount} running · ${totalBuses} shown`}
+          </div>
         </div>
         <div style={{ background: 'rgba(255,255,255,0.12)', borderRadius: 20, padding: '4px 10px', display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
           <div className="live-dot" />
           <span style={{ fontSize: 11, fontWeight: 600, color: 'white' }}>LIVE · {lastSync}s</span>
         </div>
+      </div>
+
+      {/* ROUTE SEARCH BAR — always visible in Live Buses mode */}
+      <div style={{ background: 'var(--blue)', padding: '0 14px 14px' }}>
+        <div style={{ position: 'relative' }}>
+          <input
+            type="text"
+            value={routeSearch}
+            onChange={e => setRouteSearch(e.target.value.toUpperCase())}
+            placeholder="Search route number  e.g. 900R, 400, 38J..."
+            style={{
+              width: '100%', padding: '10px 40px 10px 14px',
+              borderRadius: 10, border: 'none', fontSize: 13,
+              color: 'var(--text)', outline: 'none',
+              fontFamily: 'Rajdhani,sans-serif', fontWeight: 600,
+              letterSpacing: 0.5, boxSizing: 'border-box' as const,
+            }}
+          />
+          {routeSearch ? (
+            <button onClick={() => setRouteSearch('')} style={{
+              position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer',
+              fontSize: 16, color: 'var(--mute)', padding: 4,
+            }}>✕</button>
+          ) : (
+            <span style={{
+              position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
+              fontSize: 16, pointerEvents: 'none',
+            }}>🔍</span>
+          )}
+        </div>
+        {routeSearch && (
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 6, paddingLeft: 2 }}>
+            {filtered.length > 0
+              ? `${filtered.length} route${filtered.length > 1 ? 's' : ''} matching "${routeSearch}"`
+              : `No routes found for "${routeSearch}" — try 900, 400, 38J`}
+          </div>
+        )}
       </div>
 
       {fromParam && toParam && (
@@ -304,15 +357,31 @@ export default function Buses() {
         {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--mute)', fontSize: 14 }}>Loading buses...</div>}
 
         {!loading && filtered.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 40 }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🚌</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>No buses found</div>
-            <div style={{ fontSize: 13, color: 'var(--mute)', marginBottom: 20 }}>
-              {fromParam && toParam ? `No direct routes from "${fromParam}" to "${toParam}". Try shorter names.` : isRouteSearch ? `No route matching "${routeParam}"` : 'Try different stop names'}
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>
+              {routeSearch ? '🔍' : '🚌'}
             </div>
-            <button className="btn-primary" onClick={() => nav('/')} style={{ width: 'auto', padding: '10px 24px' }}>← Search Again</button>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>
+              {routeSearch ? `No route matching "${routeSearch}"` : 'No buses found'}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--mute)', marginBottom: 16 }}>
+              {routeSearch
+                ? 'Try a different number — e.g. 900R, 400, 38J, 10K, 52S'
+                : fromParam && toParam
+                ? `No buses between ${fromParam} and ${toParam} right now`
+                : 'All routes have completed trips for this period'}
+            </div>
+            {routeSearch && (
+              <button onClick={() => setRouteSearch('')}
+                style={{ background: 'var(--blue)', color: 'white', border: 'none',
+                         borderRadius: 8, padding: '8px 20px', fontSize: 13,
+                         fontWeight: 600, cursor: 'pointer' }}>
+                Clear search
+              </button>
+            )}
           </div>
         )}
+
 
         {!loading && filtered.map(group => {
           // Primary bus: prefer running now, then next upcoming, never a completed trip
