@@ -207,55 +207,10 @@ export default function Buses() {
         .in('route_no', routeNos)
         .order('departure_time', { ascending: true })
 
-      // ── Also fetch timetable for routes with no bus entries ──────────────────
-      // Some routes exist in timetable but not in buses table
-      // We synthesize virtual bus rows from timetable so they appear in Live Buses
-      const routesWithNoBuses = routeNos.filter(rno =>
-        !(busData || []).some(b => b.route_no === rno)
-      )
-      let ttData: any[] = []
-      if (routesWithNoBuses.length > 0) {
-        const { data: tt } = await supabase
-          .from('timetable')
-          .select('route_no,departure_time,arrival_time,days_of_operation')
-          .in('route_no', routesWithNoBuses)
-          .order('departure_time', { ascending: true })
-        ttData = tt || []
-      }
-
-      // Helper: make a virtual BusRow from a timetable slot
-      const makeTTBus = (t: any): BusRow => {
-        const now = nowISTMins()
-        const dep = timeToMins(t.departure_time)
-        const arr = timeToMins(t.arrival_time)
-        const running = dep <= now && now <= arr
-        const elapsed = running ? now - dep : 0
-        const dur = arr - dep
-        const stopIndex = running && dur > 0
-          ? Math.max(1, Math.round((elapsed / dur) * 5) + 1)
-          : 1
-        return {
-          id: `tt-${t.route_no}-${t.departure_time}`,
-          registration: 'Schedule',
-          route_no: t.route_no,
-          status: running ? 'running' : dep > now ? 'depot' : 'completed',
-          current_stop_index: stopIndex,
-          seats_occupied: running ? Math.round(Math.random() * 20 + 5) : 0,
-          departure_time: t.departure_time,
-          arrival_time: t.arrival_time,
-          driver_name: '',
-          delay_mins: 0,
-        }
-      }
-
       // ── Assign buses to routes, filter to relevant only ─────────────────────
+      // Only real buses from the buses table — no timetable synthesis
       const grouped: RouteGroup[] = matchedRoutes.map(r => {
-        // Use real buses if available, otherwise synthesize from timetable
-        const realBuses = (busData || []).filter(b => b.route_no === r.route_no)
-        const ttBuses = realBuses.length === 0
-          ? ttData.filter(t => t.route_no === r.route_no).map(makeTTBus)
-          : []
-        const allBuses = realBuses.length > 0 ? realBuses : ttBuses
+        const allBuses = (busData || []).filter(b => b.route_no === r.route_no)
 
         const window = (fromParam && toParam) ? 180 : 60
         const relevant = allBuses.filter(b => isRelevantBus(b, window))
@@ -521,7 +476,7 @@ export default function Buses() {
                   const bPct = Math.min(100, Math.round((bus.seats_occupied / group.capacity) * 100))
                   return (
                     <div key={bus.id} style={{ padding: '7px 14px', background: (() => { const n=nowISTMins(),a=timeToMins(bus.arrival_time); return n>a&&bus.status!=='breakdown'&&bus.status!=='delayed' ? '#F8F8F8' : idx%2===0?'white':'var(--gray)' })(), display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #F0F4FA', opacity: (() => { const n=nowISTMins(),a=timeToMins(bus.arrival_time); return n>a&&bus.status!=='breakdown'&&bus.status!=='delayed' ? 0.45 : 1 })() }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', minWidth: 100 }}>{bus.registration === 'Schedule' ? 'Timetable' : bus.registration}</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', minWidth: 100 }}>{bus.registration}</div>
                       <div style={{ fontSize: 11, color: 'var(--mute)', flex: 1 }}>🕐 {bus.departure_time}</div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <div className="occ-bar-track" style={{ width: 40 }}>
