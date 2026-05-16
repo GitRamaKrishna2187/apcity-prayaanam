@@ -109,12 +109,17 @@ export default function Timetable() {
     }
 
     // FALLBACK: timetable table if no buses found for this route
+    // These slots are NOT in the buses table = no vehicle assigned = Trip not planned
     const { data: tt } = await supabase
       .from('timetable')
       .select('route_no, departure_time, arrival_time, days_of_operation')
       .eq('route_no', rno)
       .order('departure_time', { ascending: true })
-    setSlots((tt || []))
+    // Mark every fallback slot as not_planned so they display correctly
+    setSlots((tt || []).map(t => ({
+      ...t,
+      days_of_operation: 'not_planned',
+    })))
     setSloading(false)
   }, [])
 
@@ -223,10 +228,24 @@ export default function Timetable() {
               )}
             </div>
 
-            <div style={{ padding: '10px 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.4, display: 'flex', justifyContent: 'space-between' }}>
-              <span>Schedule — {slots.length} buses</span>
-              <span style={{ fontSize: 11, fontWeight: 400 }}>{past.length} done · {upcoming.length} upcoming</span>
-            </div>
+            {(() => {
+              const notPlannedCount = slots.filter(s => s.days_of_operation === 'not_planned').length
+              const realCount = slots.length - notPlannedCount
+              return (
+                <div style={{ padding: '10px 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Schedule — {slots.length} slots</span>
+                  {notPlannedCount > 0 && notPlannedCount === slots.length ? (
+                    <span style={{ fontSize: 10, fontWeight: 600, color: '#F59E0B', background: '#FFFBEB', padding: '2px 8px', borderRadius: 10, border: '1px solid #FDE68A' }}>
+                      ⚠ No vehicles assigned
+                    </span>
+                  ) : notPlannedCount > 0 ? (
+                    <span style={{ fontSize: 10, color: '#9CA3AF' }}>{realCount} active · {notPlannedCount} not planned</span>
+                  ) : (
+                    <span style={{ fontSize: 11, fontWeight: 400 }}>{past.length} done · {upcoming.length} upcoming</span>
+                  )}
+                </div>
+              )
+            })()}
 
             {sloading && <div style={{ textAlign: 'center', padding: 30, color: 'var(--mute)' }}>Loading schedule...</div>}
 
@@ -243,14 +262,16 @@ export default function Timetable() {
             {!sloading && slots.length > 0 && (
               <div style={{ padding: '0 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {display.map((slot, idx) => {
-                  const dep = toMins(slot.departure_time)
-                  const arr = toMins(slot.arrival_time)
-                  const running  = dep <= now && now <= arr
-                  const isN      = dep >= now && dep - now <= 90
-                  const departed = dep < now - 5 && !running
+                  const dep        = toMins(slot.departure_time)
+                  const arr        = toMins(slot.arrival_time)
+                  const notPlanned = slot.days_of_operation === 'not_planned'
+                  const running    = !notPlanned && dep <= now && now <= arr
+                  const isN        = !notPlanned && dep >= now && dep - now <= 90
+                  const departed   = !notPlanned && dep < now - 5 && !running
                   // Show NOW divider before the first non-completed trip
                   const prevSlot = display[idx - 1]
-                  const showNowDivider = idx > 0 && prevSlot &&
+                  const showNowDivider = !notPlanned && idx > 0 && prevSlot &&
+                    prevSlot.days_of_operation !== 'not_planned' &&
                     toMins(prevSlot.departure_time) < now - 5 &&
                     !isRunning(prevSlot.departure_time, prevSlot.arrival_time) &&
                     (running || (!departed))
@@ -275,24 +296,30 @@ export default function Timetable() {
                       </div>
                     )}
                     <div key={idx} style={{
-                      background: running ? '#E8F5E9' : isN ? '#EFF6FF' : departed ? '#F8F8F8' : 'white',
-                      borderRadius: 10, padding: '10px 14px', boxShadow: departed ? 'none' : 'var(--shadow)',
-                      border: running ? '1.5px solid #1A7A4A' : isN ? '1.5px solid var(--blue)' : departed ? '1px solid #F0F0F0' : '1.5px solid #EEF2F8',
-                      display: 'flex', alignItems: 'center', gap: 12, opacity: departed ? 0.6 : 1,
+                      background: notPlanned ? '#FAFAFA' : running ? '#E8F5E9' : isN ? '#EFF6FF' : departed ? '#F8F8F8' : 'white',
+                      borderRadius: 10, padding: '10px 14px',
+                      boxShadow: (departed || notPlanned) ? 'none' : 'var(--shadow)',
+                      border: notPlanned ? '1px dashed #E5E7EB' : running ? '1.5px solid #1A7A4A' : isN ? '1.5px solid var(--blue)' : departed ? '1px solid #F0F0F0' : '1.5px solid #EEF2F8',
+                      display: 'flex', alignItems: 'center', gap: 12, opacity: (departed || notPlanned) ? 0.55 : 1,
                     }}>
                       <div style={{ minWidth: 70, textAlign: 'center' as const }}>
-                        <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: departed ? 400 : 700, color: running ? '#1A7A4A' : isN ? 'var(--blue)' : departed ? '#9CA3AF' : 'var(--text)' }}>
+                        <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: (departed || notPlanned) ? 400 : 700, color: notPlanned ? '#D1D5DB' : running ? '#1A7A4A' : isN ? 'var(--blue)' : departed ? '#9CA3AF' : 'var(--text)' }}>
                           {fmt(slot.departure_time)}
                         </div>
                         <div style={{ fontSize: 10, color: 'var(--mute)' }}>→ {fmt(slot.arrival_time)}</div>
                       </div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 11, color: 'var(--mute)' }}>{slot.days_of_operation}</div>
+                        <div style={{ fontSize: 11, color: notPlanned ? '#D1D5DB' : 'var(--mute)' }}>
+                          {notPlanned ? 'No vehicle assigned' : slot.days_of_operation}
+                        </div>
                         {running && <div style={{ fontSize: 11, fontWeight: 600, color: '#1A7A4A', display: 'flex', alignItems: 'center', gap: 4 }}><span className="live-dot" style={{ width: 6, height: 6 }} />En Route now</div>}
                         {isN && !running && <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--blue)' }}>Next bus</div>}
+                        {notPlanned && <div style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF' }}>Trip not planned</div>}
                       </div>
                       <div style={{ textAlign: 'right' as const, flexShrink: 0 }}>
-                        {running ? (
+                        {notPlanned ? (
+                          <div style={{ fontSize: 10, color: '#D1D5DB', fontWeight: 600 }}>—</div>
+                        ) : running ? (
                           <div style={{ background: '#1A7A4A', color: 'white', fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 20 }}>Running</div>
                         ) : departed ? (
                           <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3 }}>
