@@ -1,0 +1,45 @@
+ApCityPrayaanam is a Web-app developed for Live tracking of City buses stop by stop, real-time occupancy of bus seats with the help of Pine-Labs ePoS data, digital ePass self-registration in Passenger mobile.
+
+ 1) Application1:Web-App:  A web app developed by giving prompts to claude in natural language and development of code in  
+                           Typescript.Advantage of web-app is, it can be hosted in any browser and no play store installation is 
+                           not required 
+                           Front end: React18+Vite
+                           Backend  : Supabase
+                           Hosting  : Vercel 
+                           The code given by claude is copied into Github which inturn has a webhook to vercel. The vercel has react18 for routing and vite to 
+                           compile entire typescript to javascript which can be hosted in any browser
+
+                           Web App link: https://apcity-prayaanam-ohap.vercel.app/
+ 
+ 2)Application 2: HTML:   Authority portal developed in HTML for depot managers to approve e-passes.It also gives access to view the total live buses, occupancy in different routes
+
+                       Portal link: https://gitramakrishna2187.github.io/apcity-prayaanam/authority_portal.html
+
+3) Application 3:Power BI Dashboard: A dashboard is designed in Power BI to review Performances of buses, routes and depots.
+                         Power BI Dashboard link:  https://app.powerbi.com/view r=eyJrIjoiNjAwOGI2NWEtZjk2Yy00NjAyLWE3NGItODZiY2I3ZmEzMjgwIiwidCI6ImM2ZTU0OWIzLTVmNDUtNDAzMi1hYWU5LWQ0MjQ0ZGM1YjJjNCJ9&embedImagePlaceholder=true
+
+
+Home screen:
+ Main page is the Home screen showing all the icons and transition between screens. The screen explains the total languages which the app can be viewed. It also shows Search by routes, route number options, Live buses, Bus tickets,Time table,alerts
+
+Buses screen:
+ Buses screen is the most important page in the app. It signifies the tracking of bus, location of bus, nearby bus stops, total live buses in the searched route, the total number of buses which completed the trips, upcoming trips, occupancy of seats in the upcoming buses. buses specification along with bus registration numbers.25sec timeperiod to update data from server for accurate positioning of bus as well seat count.At present data is sample data and a web hook is kept in supabase for a 24 hour period to update it as per requirement
+
+Epass screen:
+ This page signifies the registration of bus pass by students/ government employees and epass generation along with pass id. whenever student enrolls for bus pass, all his data will be registered into supabase and the same supabase is used by HTML page authority portal. The Authority portal has depot manager login which approves or rejects based on the data presented by student/employee.An option for UPI payment, status of Approval of e-pass, validation and all necessary is present in this screen. with this QR based app the depot manager and higher authorities can estimate the total travel with bus passes, most routes with bus passes. This helps in better planning of services in the concerned routes. For women passengers it eliminates carrying of aadhar proof as the proof is pass itself is registered with aadhar
+
+Timetable screen:
+   The screen helps for passengers for better planning for upcoming journeys. It also helps to know the buse services available in a particular route. The total buses , bus journey duration can be known using this screen
+
+MyProfile screen:
+    This screen is useful for regular passengers,long distance passengers as well as persons who are unaware of bus stops. when notification is kept on. it signifies with alarm about the upcoming bus stop. it also helps to lookout the total amount spent per month 
+
+HTML Screen:
+  The HTML Page https://gitramakrishna2187.github.io/apcity-prayaanam/authority_portal.html helps for Depot manager to approve/reject the pass based on the information given by the candidate as well as verifying the originality of credentials by cross checking with any other sites.It helps to know the total number of live buses, occupancy in the buses,breakdowns. using this screen decisions can be taken without delay in case of breakdowns
+
+PowerBI Dashbaord screen:
+     The purpose of this dashboard is for analyzing the performance of the buses. it helps in better understanding of data and provide services to the public in a better way. This helps to identify the routes with max occupancy so that additional buses can be attached in the route. also routes with very less occupancy and time, so that the route can be discontinued. during festive seasons like dusserha, Pongal in order to control the surge previous year data is helpful in taking decisions.
+
+Over all ApCityPrayaanam is a wholistic approach towards complete digitalization of existing system and providing better passenger data to the Government and service to the public
+   
+                   
