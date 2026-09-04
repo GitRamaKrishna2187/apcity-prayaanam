@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>APCityPrayaanam — Live Demo Panel</title>
+<style>
+/* ── Design tokens ── */
+:root {
+  --blue:   #1B3A6B;
+  --teal:   #0F6E56;
+  --gold:   #F5A623;
+  --red:    #C0392B;
+  --green:  #1A7A4A;
+  --light:  #EBF2FF;
+  --gray:   #F4F6FA;
+  --text:   #1C2B4A;
+  --mute:   #7A8BA6;
+  --white:  #FFFFFF;
+  --shadow: 0 2px 16px rgba(13,43,94,0.13);
+  --radius: 14px;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+
+body {
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #0D1B35;
+  min-height: 100vh;
+  padding: 0 0 40px;
+  color: var(--white);
+}
+
+/* ── Header ── */
+.header {
+  background: linear-gradient(135deg, #1B3A6B 0%, #0F6E56 100%);
+  padding: 16px 18px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+.header-title { font-size: 18px; font-weight: 800; letter-spacing: 0.5px; }
+.header-title span { color: var(--gold); }
+.header-sub { font-size: 10px; opacity: 0.65; margin-top: 2px; letter-spacing: 0.5px; text-transform: uppercase; }
+.live-badge {
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(255,255,255,0.12);
+  padding: 5px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+}
+.live-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #4CAF50;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.8)} }
+
+/* ── Section cards ── */
+.section {
+  margin: 14px 14px 0;
+  background: #162040;
+  border-radius: var(--radius);
+  border: 1px solid rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+.section-header {
+  padding: 13px 16px 11px;
+  display: flex; align-items: center; gap: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.section-icon { font-size: 20px; }
+.section-title { font-size: 14px; font-weight: 700; color: var(--white); }
+.section-sub { font-size: 10px; color: var(--mute); margin-top: 2px; }
+.section-badge {
+  margin-left: auto; font-size: 10px; font-weight: 700;
+  padding: 3px 8px; border-radius: 20px;
+}
+.badge-green { background: #1A7A4A33; color: #4CAF50; border: 1px solid #4CAF5044; }
+.badge-blue  { background: #1B3A6B55; color: #90CAF9; border: 1px solid #1B3A6B88; }
+.badge-gold  { background: #F5A62322; color: var(--gold); border: 1px solid #F5A62344; }
+.badge-red   { background: #C0392B22; color: #EF9A9A; border: 1px solid #C0392B44; }
+.section-body { padding: 16px; }
+
+/* ── GPS Section ── */
+.gps-coords {
+  background: #0D1B35;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.8;
+  border: 1px solid rgba(255,255,255,0.06);
+  margin-bottom: 12px;
+}
+.coord-label { color: var(--mute); font-size: 10px; text-transform: uppercase; }
+.coord-value { color: #90EE90; font-weight: 700; }
+.coord-accuracy { color: var(--gold); }
+
+.stop-match-card {
+  background: linear-gradient(135deg, #0F6E5622 0%, #1B3A6B33 100%);
+  border: 1px solid #0F6E5644;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  min-height: 60px;
+  display: flex; align-items: center; gap: 12px;
+}
+.stop-match-icon { font-size: 28px; }
+.stop-match-name { font-size: 15px; font-weight: 700; color: var(--white); }
+.stop-match-dist { font-size: 11px; color: var(--mute); margin-top: 2px; }
+.stop-match-index {
+  margin-left: auto;
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--teal);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 800;
+}
+
+.stops-list { margin-bottom: 12px; }
+.stop-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  transition: background 0.2s;
+}
+.stop-row.active { background: #0F6E5633; border: 1px solid #0F6E5666; }
+.stop-row.passed { opacity: 0.4; }
+.stop-circle {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 2px solid #3A4A6B;
+  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.stop-circle.s-passed { background: #1A7A4A; border-color: #1A7A4A; }
+.stop-circle.s-active { background: var(--blue); border-color: var(--gold); box-shadow: 0 0 0 3px rgba(245,166,35,0.3); }
+.stop-name-text { font-size: 12px; color: rgba(255,255,255,0.75); }
+.stop-name-text.s-active { color: var(--white); font-weight: 700; font-size: 13px; }
+.stop-dist-text { margin-left: auto; font-size: 10px; color: var(--mute); font-family: monospace; }
+
+.btn-gps-start {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, var(--teal) 0%, #0A5240 100%);
+  color: white; border: none; border-radius: 10px;
+  font-size: 15px; font-weight: 800; letter-spacing: 0.5px;
+  cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-gps-start:active { transform: scale(0.97); }
+.btn-gps-stop {
+  width: 100%;
+  padding: 14px;
+  background: linear-gradient(135deg, #C0392B 0%, #922B21 100%);
+  color: white; border: none; border-radius: 10px;
+  font-size: 15px; font-weight: 800;
+  cursor: pointer; transition: all 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.btn-gps-stop:active { transform: scale(0.97); }
+
+.gps-log {
+  margin-top: 10px;
+  background: #0D1B35;
+  border-radius: 8px;
+  padding: 10px;
+  font-family: monospace;
+  font-size: 10px;
+  color: #4CAF50;
+  max-height: 80px;
+  overflow-y: auto;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+
+/* ── Occupancy Section ── */
+.occ-display {
+  display: flex; align-items: center; gap: 16px;
+  margin-bottom: 14px;
+}
+.occ-donut { position: relative; width: 80px; height: 80px; flex-shrink: 0; }
+.occ-donut svg { width: 80px; height: 80px; transform: rotate(-90deg); }
+.occ-center {
+  position: absolute; top:50%; left:50%;
+  transform: translate(-50%,-50%);
+  font-size: 20px; font-weight: 800; color: var(--white);
+  font-family: monospace;
+}
+.occ-info { flex: 1; }
+.occ-seats { font-size: 15px; font-weight: 700; color: var(--white); }
+.occ-seats span { color: #4CAF50; }
+.occ-status-tag {
+  display: inline-block; margin-top: 5px;
+  padding: 3px 10px; border-radius: 20px;
+  font-size: 11px; font-weight: 700;
+}
+
+.occ-bar-track {
+  height: 8px; background: #0D1B35;
+  border-radius: 4px; overflow: hidden; margin-bottom: 14px;
+}
+.occ-bar-fill {
+  height: 100%; border-radius: 4px;
+  transition: width 0.4s ease, background 0.4s ease;
+}
+
+.occ-controls {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 10px; margin-bottom: 10px;
+}
+.btn-occ {
+  padding: 14px 10px;
+  border: none; border-radius: 10px;
+  font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all 0.15s;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 3px;
+}
+.btn-occ:active { transform: scale(0.95); }
+.btn-board { background: linear-gradient(135deg, #1A7A4A 0%, #0F5235 100%); color: white; }
+.btn-alight { background: linear-gradient(135deg, #C0392B 0%, #922B21 100%); color: white; }
+.btn-occ-icon { font-size: 20px; }
+.btn-occ-multi {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px; margin-bottom: 10px;
+}
+.btn-multi {
+  padding: 10px 6px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: all 0.15s;
+  color: var(--white);
+  background: #0D1B35;
+  text-align: center;
+}
+.btn-multi:active { transform: scale(0.95); background: #1B3A6B; }
+.occ-sync-status {
+  text-align: center; font-size: 10px; color: var(--mute);
+  margin-top: 6px;
+}
+
+/* ── ePass Section ── */
+.epass-pending-list { margin-bottom: 12px; }
+.epass-item {
+  background: #0D1B35;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(255,255,255,0.06);
+}
+.epass-item-top {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-bottom: 8px;
+}
+.epass-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: var(--blue);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 800; color: white;
+  flex-shrink: 0;
+}
+.epass-name { font-size: 13px; font-weight: 700; color: var(--white); }
+.epass-id { font-size: 10px; color: var(--mute); margin-top: 2px; font-family: monospace; }
+.epass-route { font-size: 11px; color: var(--gold); margin-top: 2px; }
+.epass-actions { display: flex; gap: 8px; }
+.btn-approve {
+  flex: 1; padding: 10px;
+  background: linear-gradient(135deg, #1A7A4A 0%, #0F5235 100%);
+  color: white; border: none; border-radius: 8px;
+  font-size: 12px; font-weight: 800; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
+  transition: all 0.15s;
+}
+.btn-approve:active { transform: scale(0.95); }
+.btn-reject {
+  padding: 10px 14px;
+  background: #C0392B22;
+  color: #EF9A9A; border: 1px solid #C0392B44; border-radius: 8px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-reject:active { transform: scale(0.95); background: #C0392B44; }
+
+.epass-approved {
+  background: #1A7A4A22; border: 1px solid #1A7A4A55;
+  border-radius: 8px; padding: 8px 12px;
+  font-size: 12px; color: #4CAF50; font-weight: 700;
+  display: flex; align-items: center; gap: 6px;
+}
+
+.btn-add-demo-pass {
+  width: 100%;
+  padding: 12px;
+  background: #1B3A6B55;
+  color: rgba(255,255,255,0.7);
+  border: 1px dashed rgba(255,255,255,0.2);
+  border-radius: 10px;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+}
+.btn-add-demo-pass:active { background: #1B3A6B88; }
+
+/* ── Status bar at top ── */
+.status-row {
+  display: flex; gap: 6px; padding: 10px 14px 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.status-row::-webkit-scrollbar { display:none; }
+.status-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border-radius: 20px;
+  font-size: 10px; font-weight: 700; white-space: nowrap;
+  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.05);
+}
+.chip-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+/* ── Demo link ── */
+.demo-link-bar {
+  margin: 14px 14px 0;
+  background: #F5A62311;
+  border: 1px solid #F5A62333;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.demo-link-text { font-size: 11px; color: rgba(255,255,255,0.6); flex:1; }
+.demo-link-url {
+  font-size: 11px; color: var(--gold); font-family: monospace;
+  word-break: break-all;
+}
+
+/* ── Haversine debug ── */
+.haversine-debug {
+  background: #0D1B35;
+  border-radius: 8px; padding: 10px 12px;
+  margin-top: 10px;
+  border: 1px solid rgba(255,255,255,0.06);
+  display: none;
+}
+.haversine-debug.visible { display: block; }
+.hd-title { font-size: 10px; color: var(--mute); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.hd-row { display: flex; justify-content: space-between; font-size: 10px; font-family: monospace; padding: 2px 0; }
+.hd-label { color: var(--mute); }
+.hd-value { color: #90EE90; }
+.hd-value.within { color: #4CAF50; font-weight: 700; }
+.hd-value.outside { color: #EF9A9A; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────────── -->
+<div class="header">
+  <div>
+    <div class="header-title">AP <span>TRANSIT</span> DEMO</div>
+    <div class="header-sub">Live Demo Control Panel · APSRTC Waltair</div>
+  </div>
+  <div class="live-badge">
+    <div class="live-dot"></div>
+    LIVE DEMO
+  </div>
+</div>
+
+<!-- ── STATUS CHIPS ──────────────────────────────────────── -->
+<div class="status-row">
+  <div class="status-chip">
+    <div class="chip-dot" style="background:#4CAF50"></div>
+    <span id="chip-gps">GPS: OFF</span>
+  </div>
+  <div class="status-chip">
+    <div class="chip-dot" style="background:#F5A623"></div>
+    <span id="chip-supabase">Supabase: Ready</span>
+  </div>
+  <div class="status-chip">
+    <div class="chip-dot" style="background:#90CAF9"></div>
+    <span id="chip-bus">Bus: AP28Z1047</span>
+  </div>
+  <div class="status-chip">
+    <div class="chip-dot" style="background:#CE93D8"></div>
+    <span id="chip-route">Route: 900R</span>
+  </div>
+</div>
+
+<!-- ── DEMO LINK ─────────────────────────────────────────── -->
+<div class="demo-link-bar">
+  <span style="font-size:16px">👀</span>
+  <div>
+    <div class="demo-link-text">Show this on projector/second screen:</div>
+    <div class="demo-link-url">apcity-prayaanam-ohap.vercel.app → Route 900R → Bus AP28Z1047</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 1: GPS TRANSMITTER
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">📡</div>
+    <div>
+      <div class="section-title">Live GPS Transmitter</div>
+      <div class="section-sub">Your phone GPS → Haversine → Supabase → App tracker</div>
+    </div>
+    <div class="section-badge badge-green" id="gps-status-badge">STANDBY</div>
+  </div>
+  <div class="section-body">
+
+    <!-- Current coordinates -->
+    <div class="gps-coords">
+      <div><span class="coord-label">Latitude &nbsp;</span><span class="coord-value" id="disp-lat">— waiting for signal</span></div>
+      <div><span class="coord-label">Longitude</span><span class="coord-value" id="disp-lon">— waiting for signal</span></div>
+      <div><span class="coord-label">Accuracy </span><span class="coord-accuracy" id="disp-acc">—</span></div>
+      <div><span class="coord-label">Updated  </span><span style="color:#90CAF9;font-size:10px" id="disp-time">—</span></div>
+    </div>
+
+    <!-- Nearest stop matched -->
+    <div class="stop-match-card" id="stop-match-card">
+      <div class="stop-match-icon">🚏</div>
+      <div>
+        <div class="stop-match-name" id="match-name">Waiting for GPS signal...</div>
+        <div class="stop-match-dist" id="match-dist">Start GPS to begin tracking</div>
+      </div>
+      <div class="stop-match-index" id="match-index" style="background:var(--mute)">?</div>
+    </div>
+
+    <!-- Stop list visual tracker -->
+    <div class="stops-list" id="stops-list"></div>
+
+    <!-- Haversine debug -->
+    <div class="haversine-debug" id="hav-debug">
+      <div class="hd-title">Haversine calculation — last update</div>
+      <div id="hav-rows"></div>
+    </div>
+
+    <!-- Controls -->
+    <button class="btn-gps-start" id="btn-start" onclick="startGPS()">
+      📡 START GPS TRACKING
+    </button>
+    <button class="btn-gps-stop" id="btn-stop" onclick="stopGPS()" style="display:none; margin-top:8px">
+      ⏹ STOP GPS TRACKING
+    </button>
+
+    <!-- Log -->
+    <div class="gps-log" id="gps-log">Tap START to begin demo...<br></div>
+
+    <div style="margin-top:8px; display:flex; align-items:center; gap:6px; cursor:pointer" onclick="toggleDebug()">
+      <span style="font-size:10px; color:var(--mute)">Show Haversine calculations</span>
+      <span style="font-size:10px; color:var(--gold)" id="debug-toggle">▼ Show</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 2: OCCUPANCY DEMO
+══════════════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-header">
+    <div class="section-icon">🪑</div>
+    <div>
+      <div class="section-title">Occupancy Demo</div>
+      <div class="section-sub">Board / alight passengers → live donut chart in app</div>
+    </div>
+    <div class="section-badge badge-blue" id="occ-badge">0 / 44</div>
+  </div>
+  <div class="section-body">
+
+    <!-- Donut + info -->
+    <div class="occ-display">
+      <div class="occ-donut">
+        <svg viewBox="0 0 80 80">
+          <circle cx="40" cy="40" r="30" fill="none" stroke="#0D1B35" stroke-width="10"/>
+          <circle cx="40" cy="40" r="30" fill="none" stroke="#1A7A4A" stroke-width="10"
+            stroke-dasharray="188.5" id="occ-arc"
+            stroke-dashoffset="188.5" stroke-linecap="round"/>
+        </svg>
+        <div class="occ-center" id="occ-pct-disp">0%</div>
+      </div>
+      <div class="occ-info">
+        <div class="occ-seats"><span id="occ-seats-free">44 seats free</span> of 44</div>
+        <div style="font-size:10px;color:var(--mute);margin-top:3px">Bus AP28Z1047 · Route 900R</div>
+        <div class="occ-status-tag" id="occ-tag" style="background:#1A7A4A22;color:#4CAF50;border:1px solid #1A7A4A44">🟢 Empty — Boarding</div>
+      </div>
+    </div>
+
+    <!-- Bar -->
+    <div class="occ-bar-track">
+      <div class="occ-bar-fill" id="occ-bar" style="width:0%;background:#1A7A4A"></div>
+    </div>
+
+    <!-- +1 / -1 -->
+    <div class="occ-controls">
+      <button class="btn-occ btn-board" onclick="changeOcc(1)">
+        <div class="btn-occ-icon">⬆️</div>
+        <div>PASSENGER BOARDS</div>
+        <div style="font-size:10px;opacity:0.8">+1 seat occupied</div>
+      </button>
+      <button class="btn-occ btn-alight" onclick="changeOcc(-1)">
+        <div class="btn-occ-icon">⬇️</div>
+        <div>PASSENGER ALIGHTS</div>
+        <div style="font-size:10px;opacity:0.8">-1 seat occupied</div>
+      </button>
+    </div>
+
+    <!-- Bulk buttons -->
+    <div class="btn-occ-multi">
+      <button class="btn-multi" onclick="changeOcc(5)">+5 Board</button>
+      <button class="btn-multi" onclick="changeOcc(10)">+10 Board</button>
+      <button class="btn-multi" onclick="changeOcc(20)">+20 Rush</button>
+      <button class="btn-multi" onclick="changeOcc(-5)">-5 Alight</button>
+      <button class="btn-multi" onclick="changeOcc(-10)">-10 Alight</button>
+      <button class="btn-multi" onclick="resetOcc()">🔄 Reset</button>
+    </div>
+
+    <div class="occ-sync-status" id="occ-sync">Tap a button to update occupancy in real time</div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     SECTION 3: EPASS APPROVAL DEMO
+══════════════════════════════════════════════════════════ -->
+<div class="section" style="margin-bottom:0">
+  <div class="section-header">
+    <div class="section-icon">🪪</div>
+    <div>
+      <div class="section-title">ePass Approval Demo</div>
+      <div class="section-sub">Approve pending applications → passenger QR activates instantly</div>
+    </div>
+    <div class="section-badge badge-gold" id="epass-badge">Loading...</div>
+  </div>
+  <div class="section-body">
+
+    <div class="epass-pending-list" id="epass-list">
+      <div style="text-align:center;color:var(--mute);font-size:12px;padding:20px 0">
+        Loading pending passes...
+      </div>
+    </div>
+
+    <button class="btn-add-demo-pass" onclick="addDemoPass()">
+      + Add Demo Passenger (for presentation)
+    </button>
+    <div style="margin-top:8px;font-size:10px;color:var(--mute);text-align:center">
+      Creates a test ePass application that appears on the passenger app for live demo
+    </div>
+  </div>
+</div>
+
+<div style="height:30px"></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════════════════════ -->
+<script>
+// ── Config ────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://cestbejutcylclapdqqy.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_rwLvAUcUG9TgLRXm4f6AuQ_5a0XBJ0E';
+const DEMO_BUS_REG  = 'AP28Z1047';
+const DEMO_ROUTE    = '900R';
+const CAPACITY      = 44;
+const PROXIMITY_M   = 300;   // metres threshold
+const EARTH_R_KM    = 6371;  // Earth radius in km
+
+// ── Route 900R stops — lat/lon from Supabase bus_stops table ─
+// These are pre-loaded so Haversine works offline/fast without extra query
+const ROUTE_STOPS = [
+  { index:1, name:'RTC Complex',  landmark:'Near Central Railway Station', lat:17.7058, lon:83.2985 },
+  { index:2, name:'INS Kalinga',  landmark:'INS Kalinga Gate',             lat:17.7194, lon:83.2994 },
+  { index:3, name:'Sagar Nagar',  landmark:'Sagar Nagar Colony',           lat:17.7248, lon:83.3021 },
+  { index:4, name:'MVP Colony',   landmark:'MVP Colony Bus Bay',           lat:17.7271, lon:83.3037 },
+  { index:5, name:'Rushikonda',   landmark:'Beach Entry Point',            lat:17.7821, lon:83.3780 },
+];
+
+// ── State ─────────────────────────────────────────────────────
+let gpsWatchId      = null;
+let currentStopIdx  = 0;
+let occupancy       = 0;
+let debugVisible    = false;
+
+// ── Supabase REST helper ──────────────────────────────────────
+async function sbPatch(table, match_col, match_val, data) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/${table}?${match_col}=eq.${encodeURIComponent(match_val)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        'apikey':       SUPABASE_KEY,
+        'Authorization':'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer':       'return=minimal'
+      },
+      body: JSON.stringify(data)
+    }
+  );
+  return res.ok;
+}
+
+async function sbGet(table, query='') {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/${table}?${query}`,
+    {
+      headers: {
+        'apikey':       SUPABASE_KEY,
+        'Authorization':'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    }
+  );
+  return res.ok ? res.json() : [];
+}
+
+async function sbPost(table, data) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/${table}`,
+    {
+      method: 'POST',
+      headers: {
+        'apikey':       SUPABASE_KEY,
+        'Authorization':'Bearer ' + SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer':       'return=representation'
+      },
+      body: JSON.stringify(data)
+    }
+  );
+  return res.ok ? res.json() : null;
+}
+
+// ── Haversine formula ─────────────────────────────────────────
+function haversine(lat1, lon1, lat2, lon2) {
+  // Convert degrees → radians
+  const toRad = deg => deg * (Math.PI / 180);
+
+  const lat1r = toRad(lat1);   // bus latitude in radians
+  const lat2r = toRad(lat2);   // stop latitude in radians
+  const lon1r = toRad(lon1);   // bus longitude in radians
+  const lon2r = toRad(lon2);   // stop longitude in radians
+
+  const dLat  = lat2r - lat1r; // Δlat
+  const dLon  = lon2r - lon1r; // Δlon
+
+  // a = sin²(Δlat/2) + cos(lat1) × cos(lat2) × sin²(Δlon/2)
+  const sinLat = Math.sin(dLat / 2);
+  const sinLon = Math.sin(dLon / 2);
+  const a = (sinLat * sinLat) +
+            (Math.cos(lat1r) * Math.cos(lat2r) * sinLon * sinLon);
+
+  // c = 2 × atan2(√a, √(1−a))
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  // d = R × c → convert km to metres
+  const distanceKm = EARTH_R_KM * c;
+  return distanceKm * 1000; // metres
+}
+
+// ── Find nearest stop ─────────────────────────────────────────
+function findNearestStop(busLat, busLon) {
+  let nearest   = null;
+  let nearestDist = Infinity;
+  const allDistances = [];
+
+  ROUTE_STOPS.forEach(stop => {
+    const dist = haversine(busLat, busLon, stop.lat, stop.lon);
+    allDistances.push({ stop, dist });
+    if (dist < PROXIMITY_M && dist < nearestDist) {
+      nearestDist = dist;
+      nearest = stop;
+    }
+  });
+
+  return { nearest, nearestDist, allDistances };
+}
+
+// ── Render stop list ──────────────────────────────────────────
+function renderStopList(activeIndex, allDistances) {
+  const container = document.getElementById('stops-list');
+  container.innerHTML = ROUTE_STOPS.map(stop => {
+    const isPassed = stop.index < activeIndex;
+    const isActive = stop.index === activeIndex;
+    const distInfo = allDistances ? allDistances.find(d => d.stop.index === stop.index) : null;
+    const dist     = distInfo ? Math.round(distInfo.dist) : null;
+
+    return `
+      <div class="stop-row ${isActive ? 'active' : ''} ${isPassed ? 'passed' : ''}">
+        <div class="stop-circle ${isPassed ? 's-passed' : ''} ${isActive ? 's-active' : ''}">
+          ${isPassed ? '✓' : isActive ? '●' : ''}
+        </div>
+        <div class="stop-name-text ${isActive ? 's-active' : ''}">${stop.name}</div>
+        ${dist !== null ? `<div class="stop-dist-text">${dist < 1000 ? dist+'m' : (dist/1000).toFixed(1)+'km'}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+// ── Render Haversine debug ────────────────────────────────────
+function renderHavDebug(allDistances) {
+  const rows = allDistances.map(({stop, dist}) => {
+    const within = dist <= PROXIMITY_M;
+    return `<div class="hd-row">
+      <span class="hd-label">${stop.name}</span>
+      <span class="hd-value ${within ? 'within' : 'outside'}">${Math.round(dist)} m ${within ? '✓ MATCH' : ''}</span>
+    </div>`;
+  }).join('');
+  document.getElementById('hav-rows').innerHTML = rows;
+}
+
+// ── Log helper ────────────────────────────────────────────────
+function log(msg, color='#4CAF50') {
+  const el = document.getElementById('gps-log');
+  const now = new Date().toLocaleTimeString('en-IN', {timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit', second:'2-digit'});
+  el.innerHTML += `<span style="color:${color}">[${now}] ${msg}</span><br>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── GPS position received ─────────────────────────────────────
+async function onGPSPosition(pos) {
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+  const acc = Math.round(pos.coords.accuracy);
+  const now = new Date().toLocaleTimeString('en-IN', { timeZone:'Asia/Kolkata', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+
+  // Update display
+  document.getElementById('disp-lat').textContent = lat.toFixed(6) + '°';
+  document.getElementById('disp-lon').textContent = lon.toFixed(6) + '°';
+  document.getElementById('disp-acc').textContent = '±' + acc + ' metres';
+  document.getElementById('disp-time').textContent = now + ' IST';
+  document.getElementById('chip-gps').textContent  = 'GPS: ±' + acc + 'm';
+
+  // Run Haversine
+  const { nearest, nearestDist, allDistances } = findNearestStop(lat, lon);
+
+  // Update debug panel
+  if (debugVisible) renderHavDebug(allDistances);
+
+  // Update stop list
+  const activeIdx = nearest ? nearest.index : currentStopIdx;
+  renderStopList(activeIdx, allDistances);
+
+  if (nearest) {
+    // Matched a stop — update UI
+    document.getElementById('match-name').textContent = nearest.name;
+    document.getElementById('match-dist').textContent =
+      Math.round(nearestDist) + 'm away · ' + nearest.landmark;
+    document.getElementById('match-index').textContent = nearest.index;
+    document.getElementById('match-index').style.background = 'var(--teal)';
+    document.getElementById('gps-status-badge').textContent = 'MATCHED';
+    document.getElementById('gps-status-badge').className = 'section-badge badge-green';
+
+    // Write to Supabase only if stop changed
+    if (nearest.index !== currentStopIdx) {
+      currentStopIdx = nearest.index;
+      log(`🚌 BUS HERE: ${nearest.name} (stop ${nearest.index}) — ${Math.round(nearestDist)}m`);
+      document.getElementById('chip-bus').textContent = `Stop ${nearest.index}: ${nearest.name.split(' ')[0]}`;
+
+      const ok = await sbPatch('buses', 'registration', DEMO_BUS_REG, {
+        current_stop_index: nearest.index,
+        status: 'running'
+      });
+      log(ok ? `✅ Supabase updated → stop_index=${nearest.index}` : `❌ Supabase write failed`, ok ? '#4CAF50' : '#EF9A9A');
+      document.getElementById('chip-supabase').textContent = ok ? 'Supabase: ✓ Updated' : 'Supabase: Error';
+    } else {
+      log(`📍 Still at ${nearest.name} — ${Math.round(nearestDist)}m`, '#90CAF9');
+    }
+  } else {
+    // No stop within 300m — between stops
+    const closest = allDistances.reduce((a, b) => a.dist < b.dist ? a : b);
+    document.getElementById('match-name').textContent = 'Between stops — moving';
+    document.getElementById('match-dist').textContent =
+      `Nearest: ${closest.stop.name} (${Math.round(closest.dist)}m — outside 300m threshold)`;
+    document.getElementById('match-index').textContent = '↔';
+    document.getElementById('match-index').style.background = 'var(--mute)';
+    document.getElementById('gps-status-badge').textContent = 'IN TRANSIT';
+    document.getElementById('gps-status-badge').className = 'section-badge badge-gold';
+    log(`🔄 Between stops — nearest: ${closest.stop.name} at ${Math.round(closest.dist)}m`, '#F5A623');
+  }
+}
+
+function onGPSError(err) {
+  const msgs = {1:'Permission denied', 2:'Position unavailable', 3:'Timeout'};
+  log('❌ GPS Error: ' + (msgs[err.code] || err.message), '#EF9A9A');
+  document.getElementById('gps-status-badge').textContent = 'GPS ERROR';
+  document.getElementById('gps-status-badge').className = 'section-badge badge-red';
+}
+
+// ── Start / Stop GPS ──────────────────────────────────────────
+function startGPS() {
+  if (!navigator.geolocation) {
+    log('❌ Geolocation not supported on this browser', '#EF9A9A');
+    return;
+  }
+  renderStopList(0, null);
+  log('📡 Requesting GPS permission...');
+  document.getElementById('btn-start').style.display = 'none';
+  document.getElementById('btn-stop').style.display  = 'flex';
+  document.getElementById('gps-status-badge').textContent = 'ACQUIRING';
+  document.getElementById('chip-gps').textContent = 'GPS: Acquiring...';
+
+  // Set bus to running in Supabase immediately
+  sbPatch('buses', 'registration', DEMO_BUS_REG, { status: 'running' });
+
+  gpsWatchId = navigator.geolocation.watchPosition(
+    onGPSPosition,
+    onGPSError,
+    {
+      enableHighAccuracy: true,  // use full GPS, not cell tower
+      maximumAge: 5000,          // accept cached position up to 5 seconds old
+      timeout: 10000             // wait up to 10s for a fix
+    }
+  );
+  log('✅ GPS watch started — high accuracy mode');
+}
+
+function stopGPS() {
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+  document.getElementById('btn-start').style.display = 'flex';
+  document.getElementById('btn-stop').style.display  = 'none';
+  document.getElementById('gps-status-badge').textContent = 'STOPPED';
+  document.getElementById('gps-status-badge').className = 'section-badge badge-red';
+  document.getElementById('chip-gps').textContent = 'GPS: OFF';
+  log('⏹ GPS tracking stopped', '#F5A623');
+
+  // Set bus back to depot
+  sbPatch('buses', 'registration', DEMO_BUS_REG, { status: 'depot', current_stop_index: 0 });
+}
+
+function toggleDebug() {
+  debugVisible = !debugVisible;
+  document.getElementById('hav-debug').classList.toggle('visible', debugVisible);
+  document.getElementById('debug-toggle').textContent = debugVisible ? '▲ Hide' : '▼ Show';
+}
+
+// ── Occupancy ─────────────────────────────────────────────────
+async function changeOcc(delta) {
+  const prev = occupancy;
+  occupancy = Math.max(0, Math.min(CAPACITY, occupancy + delta));
+  if (occupancy === prev) return;
+
+  updateOccUI();
+  document.getElementById('occ-sync').textContent = 'Syncing to Supabase...';
+
+  const ok = await sbPatch('buses', 'registration', DEMO_BUS_REG, {
+    seats_occupied: occupancy
+  });
+
+  const pct = Math.round((occupancy / CAPACITY) * 100);
+  document.getElementById('occ-sync').textContent =
+    ok
+      ? `✅ Synced — ${pct}% shown live on passenger app`
+      : '❌ Sync failed — check connection';
+  document.getElementById('occ-badge').textContent = `${occupancy} / ${CAPACITY}`;
+}
+
+async function resetOcc() {
+  occupancy = 0;
+  updateOccUI();
+  document.getElementById('occ-badge').textContent = `0 / ${CAPACITY}`;
+  await sbPatch('buses', 'registration', DEMO_BUS_REG, { seats_occupied: 0 });
+  document.getElementById('occ-sync').textContent = '✅ Reset — bus is empty';
+}
+
+function updateOccUI() {
+  const pct  = Math.round((occupancy / CAPACITY) * 100);
+  const circ = 188.5;
+  const off  = circ - (pct / 100) * circ;
+
+  // Colour thresholds
+  let color, tagBg, tagColor, tagText;
+  if (pct < 60) {
+    color = '#1A7A4A'; tagBg = '#1A7A4A22'; tagColor = '#4CAF50'; tagText = '🟢 Comfortable — Plenty of seats';
+  } else if (pct < 85) {
+    color = '#F5A623'; tagBg = '#F5A62322'; tagColor = '#F5A623'; tagText = '🟡 Filling Up — Board now';
+  } else {
+    color = '#C0392B'; tagBg = '#C0392B22'; tagColor = '#EF9A9A'; tagText = '🔴 Almost Full — Consider next bus';
+  }
+
+  const arc = document.getElementById('occ-arc');
+  arc.setAttribute('stroke-dashoffset', off);
+  arc.setAttribute('stroke', color);
+
+  document.getElementById('occ-pct-disp').textContent = pct + '%';
+  document.getElementById('occ-seats-free').textContent = (CAPACITY - occupancy) + ' seats free';
+  document.getElementById('occ-bar').style.width      = pct + '%';
+  document.getElementById('occ-bar').style.background = color;
+
+  const tag = document.getElementById('occ-tag');
+  tag.textContent = tagText;
+  tag.style.background = tagBg;
+  tag.style.color      = tagColor;
+  tag.style.border     = `1px solid ${color}44`;
+}
+
+// ── ePass ─────────────────────────────────────────────────────
+let passItems = [];
+
+async function loadPendingPasses() {
+  const passes = await sbGet('epasses', 'status=eq.pending&order=created_at.desc&limit=5');
+  passItems = passes || [];
+  renderPassList();
+  const badge = document.getElementById('epass-badge');
+  badge.textContent = passItems.length + ' pending';
+  badge.className = passItems.length > 0 ? 'section-badge badge-gold' : 'section-badge badge-green';
+}
+
+function renderPassList() {
+  const container = document.getElementById('epass-list');
+  if (!passItems.length) {
+    container.innerHTML = `
+      <div style="text-align:center;color:var(--mute);font-size:12px;padding:20px 0">
+        No pending applications<br>
+        <span style="font-size:10px">Add a demo passenger below or wait for a real submission</span>
+      </div>`;
+    return;
+  }
+
+  container.innerHTML = passItems.map((p, i) => {
+    const initials = (p.holder_name || 'XX').split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2);
+    const passType = p.pass_type || 'Monthly Pass';
+    const route    = p.route || 'Visakhapatnam — All Routes';
+    const amount   = p.amount || '₹350';
+    return `
+      <div class="epass-item" id="epass-item-${i}">
+        <div class="epass-item-top">
+          <div class="epass-avatar">${initials}</div>
+          <div>
+            <div class="epass-name">${p.holder_name || 'Demo Passenger'}</div>
+            <div class="epass-id">${p.pass_id || p.id}</div>
+            <div class="epass-route">${passType} · ${route} · ${amount}</div>
+          </div>
+        </div>
+        <div class="epass-actions">
+          <button class="btn-approve" onclick="approvePass(${i}, '${p.pass_id || p.id}')">
+            ✅ APPROVE — QR Activates Instantly
+          </button>
+          <button class="btn-reject" onclick="rejectPass(${i}, '${p.pass_id || p.id}')">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function approvePass(i, passId) {
+  const btn = document.querySelector(`#epass-item-${i} .btn-approve`);
+  btn.textContent = 'Approving...';
+  btn.disabled = true;
+
+  const ok = await sbPatch('epasses', 'pass_id', passId, {
+    status: 'active',
+    updated_at: new Date().toISOString()
+  });
+
+  const item = document.getElementById(`epass-item-${i}`);
+  if (ok) {
+    item.querySelector('.epass-actions').innerHTML = `
+      <div class="epass-approved">
+        ✅ APPROVED — Passenger QR code is now active on their screen
+      </div>`;
+  } else {
+    btn.textContent = '✅ APPROVE';
+    btn.disabled = false;
+    alert('Supabase update failed — check connection');
+  }
+
+  setTimeout(loadPendingPasses, 3000);
+}
+
+async function rejectPass(i, passId) {
+  const ok = await sbPatch('epasses', 'pass_id', passId, {
+    status: 'rejected',
+    rejection_reason: 'Demo rejection — re-apply',
+    updated_at: new Date().toISOString()
+  });
+  if (ok) {
+    document.getElementById(`epass-item-${i}`).style.opacity = '0.3';
+    setTimeout(loadPendingPasses, 2000);
+  }
+}
+
+async function addDemoPass() {
+  const names  = ['Bhanu Gopal', 'Sai Kumar', 'Lakshmi Devi', 'Ravi Teja', 'Anitha Rao'];
+  const name   = names[Math.floor(Math.random() * names.length)];
+  const passId = 'APTC-2026-VSP-00' + Math.floor(10000 + Math.random() * 90000);
+  const now    = new Date().toISOString();
+
+  const data = {
+    pass_id:      passId,
+    holder_name:  name,
+    aadhaar_last4:'Demo',
+    status:       'pending',
+    route:        'Visakhapatnam — All Routes',
+    pass_type:    'Monthly Pass',
+    amount:       '₹350',
+    payment:      'UPI Demo',
+    created_at:   now,
+    updated_at:   now
+  };
+
+  await sbPost('epasses', data);
+  await loadPendingPasses();
+}
+
+// ── Init ──────────────────────────────────────────────────────
+renderStopList(0, null);
+updateOccUI();
+loadPendingPasses();
+setInterval(loadPendingPasses, 15000); // refresh ePass list every 15s
+
+// Fetch current occupancy from Supabase on load
+sbGet('buses', `registration=eq.${DEMO_BUS_REG}&select=seats_occupied`).then(rows => {
+  if (rows && rows.length > 0) {
+    occupancy = rows[0].seats_occupied || 0;
+    updateOccUI();
+    document.getElementById('occ-badge').textContent = `${occupancy} / ${CAPACITY}`;
+  }
+});
+</script>
+</body>
+</html>
