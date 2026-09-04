@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>GPS Tracker — Route 2047</title>
+<style>
+:root {
+  --blue:#1B3A6B; --teal:#0F6E56; --gold:#F5A623;
+  --green:#1A7A4A; --red:#C0392B; --light:#EBF2FF;
+  --gray:#F4F6FA; --mute:#7A8BA6; --text:#1C2B4A;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--gray);min-height:100dvh}
+.wrap{max-width:420px;margin:0 auto;padding-bottom:60px}
+
+.hdr{background:var(--blue);padding:14px 16px 14px;color:white}
+.hdr-top{display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:19px;font-weight:800;letter-spacing:.5px}
+.logo span{color:var(--gold)}
+.rbadge{background:var(--gold);color:var(--blue);font-size:14px;font-weight:800;padding:4px 14px;border-radius:20px}
+.hsub{font-size:11px;opacity:.6;margin-top:4px}
+
+.card{background:white;margin:12px;border-radius:14px;padding:16px;box-shadow:0 2px 16px rgba(13,43,94,.1)}
+.clabel{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px}
+.b-idle{background:#FFF8E1;color:#9A6700}
+.b-live{background:#E8F5E9;color:var(--green)}
+.b-err{background:#FDECEA;color:var(--red)}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.5s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.cbox{background:var(--gray);border-radius:10px;padding:12px;text-align:center}
+.cnum{font-size:17px;font-weight:700;color:var(--blue);font-variant-numeric:tabular-nums}
+.clbl2{font-size:10px;color:var(--mute);margin-top:2px}
+
+.acc-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--mute);margin-bottom:10px}
+.acc-track{flex:1;height:5px;background:#E2E8F0;border-radius:3px;overflow:hidden}
+.acc-fill{height:100%;border-radius:3px;transition:width .4s}
+
+.info-row{font-size:11px;color:var(--mute);margin-top:5px}
+.info-row b{color:var(--text)}
+
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:800;letter-spacing:.5px;cursor:pointer;margin-top:10px;transition:transform .1s}
+.btn:active{transform:scale(.97)}
+.btn-go{background:var(--green);color:white}
+.btn-stop{background:var(--red);color:white}
+.btn-off{background:#E2E8F0;color:var(--mute);cursor:not-allowed}
+
+/* Stop tracker */
+.stop-list{position:relative;padding-left:40px}
+.stop-item{position:relative;display:flex;align-items:flex-start}
+.rail{position:absolute;left:-40px;top:0;width:40px;display:flex;flex-direction:column;align-items:center}
+.sc{width:20px;height:20px;border-radius:50%;border:2.5px solid #D1DCF0;background:white;z-index:2;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .4s}
+.sc-p{background:#E8F5E9;border-color:var(--green)}
+.sc-c{background:var(--blue);border-color:var(--blue);width:24px;height:24px;box-shadow:0 0 0 4px rgba(27,58,107,.18)}
+.sl{width:3px;flex:1;min-height:26px;background:#E2E8F0;transition:background .4s}
+.sl-p{background:var(--green)}
+.sl-c{background:linear-gradient(to bottom,var(--blue),#E2E8F0)}
+.sc-text{padding-bottom:22px;flex:1}
+.sname{font-size:13px;font-weight:500;color:var(--text);line-height:20px}
+.sname-p{color:var(--green)}
+.sname-c{font-weight:700;color:var(--blue);font-size:14px}
+.slm{font-size:10px;color:var(--mute);margin-top:1px}
+.chip{display:inline-block;font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:5px;vertical-align:middle}
+.chip-g{background:#E8F5E9;color:var(--green)}
+.chip-b{background:var(--light);color:var(--blue)}
+.chip-m{background:#F3F4F6;color:var(--mute)}
+
+/* Log */
+.log-box{max-height:180px;overflow-y:auto;font-size:11px}
+.log-box::-webkit-scrollbar{width:3px}
+.log-box::-webkit-scrollbar-thumb{background:#D1DCF0;border-radius:2px}
+.log-entry{padding:4px 0;border-bottom:1px solid #F0F4FA;font-variant-numeric:tabular-nums;color:var(--mute)}
+.log-entry:last-child{border:none}
+.log-ok{color:var(--green)}
+.log-err{color:var(--red)}
+.log-warn{color:#9A6700}
+
+.footer{position:fixed;bottom:0;left:0;right:0;background:var(--blue);color:rgba(255,255,255,.6);font-size:10px;text-align:center;padding:7px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <div class="hdr-top">
+      <div class="logo">AP <span>TRANSIT</span></div>
+      <div class="rbadge">2047</div>
+    </div>
+    <div class="hsub">GPS Tracker · Haversine Engine · Live Supabase Push</div>
+  </div>
+
+  <!-- GPS STATUS -->
+  <div class="card">
+    <div class="clabel">
+      GPS Signal
+      <span class="badge b-idle" id="liveBadge">⏳ IDLE</span>
+    </div>
+    <div class="cgrid">
+      <div class="cbox"><div class="cnum" id="latDisp">—</div><div class="clbl2">Latitude</div></div>
+      <div class="cbox"><div class="cnum" id="lonDisp">—</div><div class="clbl2">Longitude</div></div>
+    </div>
+    <div class="acc-row">
+      <span>Accuracy</span>
+      <div class="acc-track"><div class="acc-fill" id="accFill" style="width:0%;background:var(--green)"></div></div>
+      <span id="accTxt">—</span>
+    </div>
+    <div class="info-row">Nearest stop: <b id="nearStop">—</b> &nbsp;·&nbsp; Distance: <b id="nearDist">—</b></div>
+    <div class="info-row">Last Supabase push: <b id="lastPush">Never</b></div>
+    <div class="info-row">Stop index written: <b id="idxWritten">—</b></div>
+    <button class="btn btn-off" id="btnMain" disabled onclick="startTracking()">📍 START GPS TRACKING</button>
+  </div>
+
+  <!-- STOP TRACKER -->
+  <div class="card">
+    <div class="clabel">
+      🚌 Live Route 2047 — Stop Tracker
+      <span id="stopCountLbl" style="color:var(--blue)">Loading...</span>
+    </div>
+    <div class="stop-list" id="stopList">
+      <div style="text-align:center;padding:20px;color:var(--mute);font-size:13px">Connecting to Supabase...</div>
+    </div>
+  </div>
+
+  <!-- EVENT LOG -->
+  <div class="card">
+    <div class="clabel">📋 Event Log <span id="pushCountLbl" style="color:var(--blue)">0 pushes</span></div>
+    <div class="log-box" id="logBox">
+      <div class="log-entry">Initialising GPS tracker for Route 2047...</div>
+    </div>
+  </div>
+
+</div>
+<div class="footer">APCityPrayaanam GPS Tracker · Route 2047 · BVASSR KRISHNA · 2026</div>
+
+<script>
+// ══════════════════════════════════════════════
+// ⚠ CONFIGURATION — edit these if needed
+// ══════════════════════════════════════════════
+const SB_URL   = 'https://cestbejutcylclapdqqy.supabase.co'
+const SB_KEY   = 'sb_publishable_rwLvAUcUG9TgLRXm4f6AuQ_5a0XBJ0E'
+const ROUTE    = '2047'
+const PROX_M   = 300        // Haversine threshold in metres
+const PUSH_MS  = 5000       // push every 5 seconds
+
+// ── Supabase helpers ───────────────────────────
+const SB_HDR = {
+  'apikey': SB_KEY,
+  'Authorization': `Bearer ${SB_KEY}`,
+  'Content-Type': 'application/json'
+}
+
+async function sbGet(table, qs) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${qs}`, { headers: SB_HDR })
+  if (!r.ok) throw new Error(`GET /${table} → HTTP ${r.status}: ${await r.text()}`)
+  return r.json()
+}
+
+async function sbPatch(table, qs, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${qs}`, {
+    method: 'PATCH',
+    headers: { ...SB_HDR, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(body)
+  })
+  if (!r.ok) throw new Error(`PATCH /${table} → HTTP ${r.status}: ${await r.text()}`)
+}
+
+// ══════════════════════════════════════════════
+// HAVERSINE FORMULA
+// Returns distance in METRES between two GPS points
+// lat1/lon1 = bus (phone GPS)
+// lat2/lon2 = bus stop (from Supabase bus_stops)
+// ══════════════════════════════════════════════
+function haversineM(lat1, lon1, lat2, lon2) {
+  const R    = 6371000                        // Earth radius metres
+  const toR  = d => d * Math.PI / 180        // degrees → radians
+  const φ1   = toR(lat1),  φ2 = toR(lat2)
+  const Δφ   = toR(lat2 - lat1)
+  const Δλ   = toR(lon2 - lon1)
+  const a    = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2
+  const c    = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return R * c                                // metres
+}
+
+// ── State ──────────────────────────────────────
+let stops      = []
+let busReg     = null       // registration number = row identifier in buses
+let watchId    = null
+let pushTimer  = null
+let pushCount  = 0
+let curLat     = null
+let curLon     = null
+let curStopIdx = 1
+let tracking   = false
+
+// ── Logging ────────────────────────────────────
+function log(msg, type='info') {
+  const box = document.getElementById('logBox')
+  const el  = document.createElement('div')
+  el.className = `log-entry log-${type}`
+  const t = new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:false})
+  el.textContent = `[${t}] ${msg}`
+  box.insertBefore(el, box.firstChild)
+  while (box.children.length > 25) box.removeChild(box.lastChild)
+}
+
+// ── Render stop tracker ────────────────────────
+function renderStops(activeIdx, dists={}) {
+  const list = document.getElementById('stopList')
+  if (!stops.length) {
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--mute);font-size:13px">No stops found for route 2047 in bus_stops table</div>'
+    return
+  }
+  document.getElementById('stopCountLbl').textContent = stops.length + ' stops'
+  list.innerHTML = stops.map((s, i) => {
+    const isLast = i === stops.length - 1
+    const passed  = s.stop_index < activeIdx
+    const current = s.stop_index === activeIdx
+    const cClass  = passed ? 'sc sc-p' : current ? 'sc sc-c' : 'sc'
+    const lClass  = passed ? 'sl sl-p' : current ? 'sl sl-c' : 'sl'
+    const nClass  = passed ? 'sname sname-p' : current ? 'sname sname-c' : 'sname'
+    const dot     = passed
+      ? '<div style="width:8px;height:8px;border-radius:50%;background:var(--green)"></div>'
+      : current
+        ? '<div style="width:8px;height:8px;border-radius:50%;background:white"></div>'
+        : ''
+    const d = dists[s.stop_index]
+    let chip = ''
+    if (d !== undefined) {
+      const label = d < 1000 ? d+'m' : (d/1000).toFixed(1)+'km'
+      chip = current
+        ? `<span class="chip chip-b">📍 ${label}</span>`
+        : d <= PROX_M
+          ? `<span class="chip chip-g">✓ ${label}</span>`
+          : `<span class="chip chip-m">${label}</span>`
+    }
+    return `<div class="stop-item">
+      <div class="rail">
+        <div class="${cClass}">${dot}</div>
+        ${!isLast ? `<div class="${lClass}"></div>` : ''}
+      </div>
+      <div class="sc-text">
+        <div class="${nClass}">${s.stop_name}${chip}</div>
+        <div class="slm">${s.landmark||''}</div>
+      </div>
+    </div>`
+  }).join('')
+}
+
+// ── Push GPS + Haversine result to Supabase ────
+async function pushGPS() {
+  if (curLat === null) return
+  if (!busReg) { log('No bus registration found for route 2047','err'); return }
+
+  // Compute Haversine distance to every stop
+  const dists = {}
+  let nearestStop = null, nearestDist = Infinity
+  for (const s of stops) {
+    const d = Math.round(haversineM(curLat, curLon, s.latitude, s.longitude))
+    dists[s.stop_index] = d
+    if (d < nearestDist) { nearestDist = d; nearestStop = s }
+  }
+
+  // Assign stop index only if within threshold
+  if (nearestStop && nearestDist <= PROX_M) {
+    curStopIdx = nearestStop.stop_index
+    document.getElementById('nearStop').textContent  = nearestStop.stop_name
+    document.getElementById('nearDist').textContent  = nearestDist + 'm ✅'
+    log(`Haversine: ${nearestStop.stop_name} = ${nearestDist}m → index=${curStopIdx}`, 'ok')
+  } else if (nearestStop) {
+    document.getElementById('nearStop').textContent  = nearestStop.stop_name
+    document.getElementById('nearDist').textContent  = nearestDist + 'm (>${PROX_M}m, no update)'
+    log(`Outside ${PROX_M}m. Nearest: ${nearestStop.stop_name} at ${nearestDist}m`, 'warn')
+  }
+
+  document.getElementById('idxWritten').textContent = curStopIdx
+
+  // Write to Supabase
+  try {
+    await sbPatch('buses',
+      `route_no=eq.${ROUTE}&registration=eq.${encodeURIComponent(busReg)}`,
+      {
+        gps_lat:            curLat,
+        gps_lon:            curLon,
+        current_stop_index: curStopIdx,
+        status:             'running',
+        last_gps_update:    new Date().toISOString()
+      }
+    )
+    pushCount++
+    document.getElementById('pushCountLbl').textContent = pushCount + ' pushes'
+    document.getElementById('lastPush').textContent =
+      new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})
+    log(`✅ Pushed → lat=${curLat.toFixed(6)}, lon=${curLon.toFixed(6)}, stop=${curStopIdx}`, 'ok')
+  } catch(e) {
+    log(`PATCH failed: ${e.message}`, 'err')
+  }
+
+  renderStops(curStopIdx, dists)
+}
+
+// ── GPS callbacks ──────────────────────────────
+function onPos(pos) {
+  curLat = pos.coords.latitude
+  curLon = pos.coords.longitude
+  const acc = Math.round(pos.coords.accuracy)
+  document.getElementById('latDisp').textContent = curLat.toFixed(6)
+  document.getElementById('lonDisp').textContent = curLon.toFixed(6)
+  const pct   = Math.max(0, Math.min(100, 100 - (acc/50)*100))
+  const color = acc < 20 ? 'var(--green)' : acc < 50 ? 'var(--gold)' : 'var(--red)'
+  document.getElementById('accFill').style.width      = pct + '%'
+  document.getElementById('accFill').style.background = color
+  document.getElementById('accTxt').textContent = `±${acc}m`
+  const badge = document.getElementById('liveBadge')
+  badge.className = 'badge b-live'
+  badge.innerHTML = '<div class="live-dot"></div> LIVE GPS'
+}
+
+function onPosErr(e) {
+  const msgs = {1:'Location DENIED — tap the lock icon in browser address bar and Allow',
+                2:'Position unavailable — move outdoors',3:'GPS timeout — retrying'}
+  log(msgs[e.code]||'GPS error','err')
+  const badge = document.getElementById('liveBadge')
+  badge.className = 'badge b-err'
+  badge.innerHTML = '❌ NO GPS'
+}
+
+// ── Start / Stop ───────────────────────────────
+function startTracking() {
+  if (tracking) return
+  if (!navigator.geolocation) { log('Geolocation not supported','err'); return }
+  tracking = true
+  log('GPS watch started','ok')
+  watchId   = navigator.geolocation.watchPosition(onPos, onPosErr,
+                {enableHighAccuracy:true, timeout:10000, maximumAge:0})
+  pushTimer = setInterval(pushGPS, PUSH_MS)
+  const btn = document.getElementById('btnMain')
+  btn.className = 'btn btn-stop'
+  btn.textContent = '⏹ STOP TRACKING'
+  btn.onclick = stopTracking
+  log(`Pushing every ${PUSH_MS/1000}s · Haversine threshold ${PROX_M}m`,'ok')
+}
+
+function stopTracking() {
+  if (!tracking) return
+  tracking = false
+  if (watchId  !== null) { navigator.geolocation.clearWatch(watchId); watchId = null }
+  if (pushTimer)          { clearInterval(pushTimer); pushTimer = null }
+  const badge = document.getElementById('liveBadge')
+  badge.className = 'badge b-idle'
+  badge.innerHTML = '⏸ STOPPED'
+  const btn = document.getElementById('btnMain')
+  btn.className = 'btn btn-go'
+  btn.textContent = '📍 START GPS TRACKING'
+  btn.onclick = startTracking
+  log('Tracking stopped','warn')
+  if (busReg) sbPatch('buses',
+    `route_no=eq.${ROUTE}&registration=eq.${encodeURIComponent(busReg)}`,
+    {status:'depot',current_stop_index:1}
+  ).catch(e => log('Could not set depot: '+e.message,'err'))
+}
+
+// ── Boot ───────────────────────────────────────
+async function boot() {
+  log('Connecting to Supabase...')
+
+  // 1 — load stops
+  try {
+    stops = await sbGet('bus_stops',
+      `route_no=eq.${ROUTE}&order=stop_index.asc&select=stop_index,stop_name,landmark,latitude,longitude`)
+    if (stops.length === 0) {
+      log(`No stops found for route ${ROUTE} in bus_stops table — add rows in Supabase`, 'err')
+    } else {
+      log(`✅ Loaded ${stops.length} stops for route ${ROUTE}`, 'ok')
+    }
+    renderStops(1)
+  } catch(e) {
+    log('Stops fetch failed: ' + e.message, 'err')
+    // Show helpful hint about missing columns
+    if (e.message.includes('latitude') || e.message.includes('longitude')) {
+      log('⚠ bus_stops table may be missing latitude/longitude columns — add them in Supabase Table Editor', 'err')
+    }
+  }
+
+  // 2 — load bus row
+  try {
+    const rows = await sbGet('buses',
+      `route_no=eq.${ROUTE}&limit=1&select=registration,current_stop_index,status`)
+    if (rows.length > 0) {
+      busReg     = rows[0].registration
+      curStopIdx = rows[0].current_stop_index || 1
+      log(`✅ Bus found: ${busReg} · status: ${rows[0].status}`, 'ok')
+      renderStops(curStopIdx)
+    } else {
+      log(`No bus row found for route ${ROUTE} in buses table — add a row in Supabase`, 'err')
+    }
+  } catch(e) {
+    log('Bus fetch failed: ' + e.message, 'err')
+    // Show hint about missing columns
+    if (e.message.includes('gps_lat') || e.message.includes('gps_lon')) {
+      log('⚠ buses table missing gps_lat/gps_lon columns — add them via Supabase ALTER TABLE', 'err')
+    }
+  }
+
+  // 3 — enable button only if both loaded
+  const btn = document.getElementById('btnMain')
+  if (stops.length > 0 && busReg) {
+    btn.disabled = false
+    btn.className = 'btn btn-go'
+    log('✅ Ready — tap START GPS TRACKING', 'ok')
+  } else {
+    log('❌ Cannot start — fix the errors above first', 'err')
+  }
+}
+
+window.addEventListener('load', boot)
+</script>
+</body>
+</html>
