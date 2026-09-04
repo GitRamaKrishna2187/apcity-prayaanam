@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>APCityPrayaanam — Authority Portal</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ── Reset & base ─────────────────────────────────────────── */
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Inter',sans-serif;background:#E8EDF7;color:#1C2B4A;min-height:100vh;}
+
+/* ── Variables ────────────────────────────────────────────── */
+:root{
+  --blue:#1B3A6B;--teal:#0F6E56;--amber:#F5A623;
+  --red:#C0392B;--green:#1A7A4A;--purple:#7c3aed;
+  --light:#EBF2FF;--gray:#F4F6FA;--white:#FFFFFF;
+  --mute:#7A8BA6;--text:#1C2B4A;
+  --shadow:0 2px 16px rgba(13,43,94,0.10);
+}
+
+/* ── Sidebar ──────────────────────────────────────────────── */
+.sidebar{
+  width:220px;height:100vh;background:var(--blue);
+  position:fixed;left:0;top:0;
+  display:flex;flex-direction:column;
+  box-shadow:4px 0 20px rgba(0,0,0,0.15);z-index:100;
+}
+.sidebar-logo{padding:20px 16px 16px;border-bottom:1px solid rgba(255,255,255,0.1);}
+.logo-main{font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:#fff;letter-spacing:1px;}
+.logo-main span{color:var(--amber);}
+.logo-sub{font-size:10px;color:rgba(255,255,255,0.5);margin-top:2px;}
+.logo-badge{display:inline-block;background:var(--amber);color:var(--blue);font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;margin-top:6px;}
+.nav-section{padding:10px 0 4px;}
+.nav-label{font-size:9px;font-weight:600;color:rgba(255,255,255,0.35);text-transform:uppercase;letter-spacing:1px;padding:0 16px 5px;}
+.nav-item{display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:pointer;transition:background 0.15s;font-size:13px;font-weight:500;color:rgba(255,255,255,0.7);border:none;background:none;width:100%;text-align:left;}
+.nav-item:hover{background:rgba(255,255,255,0.08);color:#fff;}
+.nav-item.active{background:rgba(255,255,255,0.12);color:#fff;border-left:3px solid var(--amber);}
+.nav-badge{margin-left:auto;font-size:9px;font-weight:700;padding:2px 6px;border-radius:10px;}
+.nb-red{background:var(--red);color:#fff;}
+.nb-amber{background:var(--amber);color:var(--blue);}
+.nb-green{background:var(--green);color:#fff;}
+.sidebar-footer{margin-top:auto;padding:14px 16px;border-top:1px solid rgba(255,255,255,0.1);font-size:11px;color:rgba(255,255,255,0.4);}
+
+/* ── Main ─────────────────────────────────────────────────── */
+.main{margin-left:220px;min-height:100vh;}
+.topbar{background:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow);position:sticky;top:0;z-index:50;}
+.topbar-title{font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:700;color:var(--blue);}
+.live-chip{display:flex;align-items:center;gap:5px;background:var(--gray);border-radius:20px;padding:5px 12px;font-size:11px;font-weight:600;color:var(--green);}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#4CAF50;animation:blink 1.5s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+.user-chip{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:500;}
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--blue);display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:700;}
+
+/* ── Pages ────────────────────────────────────────────────── */
+.page{display:none;padding:24px;}
+.page.active{display:block;}
+
+/* ── KPI grid ─────────────────────────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px;}
+.kpi-card{background:#fff;border-radius:12px;padding:18px 20px;box-shadow:var(--shadow);}
+.kpi-card.green{border-left:4px solid var(--green);}
+.kpi-card.amber{border-left:4px solid var(--amber);}
+.kpi-card.red{border-left:4px solid var(--red);}
+.kpi-card.blue{border-left:4px solid var(--blue);}
+.kpi-label{font-size:11px;color:var(--mute);font-weight:500;text-transform:uppercase;letter-spacing:0.4px;}
+.kpi-value{font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;margin:4px 0 2px;}
+.kpi-sub{font-size:11px;color:var(--mute);}
+
+/* ── Cards ────────────────────────────────────────────────── */
+.card{background:#fff;border-radius:12px;padding:20px;box-shadow:var(--shadow);margin-bottom:20px;}
+.card-title{font-size:13px;font-weight:600;color:var(--mute);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+
+/* ── Tables ───────────────────────────────────────────────── */
+.tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.tbl thead tr{background:var(--blue);}
+.tbl thead th{padding:10px 12px;color:#fff;font-weight:600;text-align:left;font-size:11px;}
+.tbl tbody tr{border-bottom:1px solid #EEF2F8;transition:background 0.1s;}
+.tbl tbody tr:hover{background:var(--gray);}
+.tbl tbody td{padding:10px 12px;vertical-align:middle;}
+.tbl tbody tr:nth-child(even){background:#FAFBFF;}
+
+/* ── Pills ────────────────────────────────────────────────── */
+.pill{display:inline-block;font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;}
+.pill-green{background:#E8F5E9;color:var(--green);}
+.pill-amber{background:#FFF3E0;color:#E65100;}
+.pill-red{background:#FDECEA;color:var(--red);}
+.pill-gray{background:#F3F4F6;color:var(--mute);}
+.pill-blue{background:var(--light);color:var(--blue);}
+.pill-purple{background:#ede9fe;color:var(--purple);}
+
+/* ── Buttons ──────────────────────────────────────────────── */
+.btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:11px;font-weight:600;transition:opacity 0.15s;}
+.btn:hover{opacity:0.85;}
+.btn:disabled{opacity:0.5;cursor:not-allowed;}
+.btn-approve{background:var(--green);color:#fff;}
+.btn-reject{background:var(--red);color:#fff;}
+.btn-view{background:var(--light);color:var(--blue);}
+.btn-primary{background:var(--blue);color:#fff;}
+.btn-amber{background:var(--amber);color:var(--blue);}
+.btn-row{display:flex;gap:6px;}
+
+/* ── Occupancy bar ────────────────────────────────────────── */
+.occ-track{height:6px;background:#E2E8F0;border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:5px;}
+.occ-fill{height:100%;border-radius:3px;}
+
+/* ── Breakdown alert ──────────────────────────────────────── */
+.breakdown-alert{background:#FFF5F5;border:1.5px solid var(--red);border-radius:10px;padding:14px 16px;margin-bottom:12px;display:flex;align-items:flex-start;gap:12px;}
+.alert-title{font-size:13px;font-weight:700;color:var(--red);}
+.alert-sub{font-size:11px;color:var(--mute);margin-top:2px;}
+.alert-actions{margin-top:8px;display:flex;gap:6px;}
+
+/* ── QR validator ─────────────────────────────────────────── */
+.qr-input{width:100%;padding:10px 14px;border:1.5px solid #E2E8F0;border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;outline:none;margin-bottom:10px;}
+.qr-input:focus{border-color:var(--blue);}
+.val-result{border-radius:12px;padding:16px;margin-top:14px;display:none;}
+.val-result.show{display:block;}
+.val-valid{background:#E8F5E9;border:1.5px solid var(--green);}
+.val-invalid{background:#FDECEA;border:1.5px solid var(--red);}
+
+/* ── Toast ────────────────────────────────────────────────── */
+.toast{position:fixed;bottom:24px;right:24px;background:var(--blue);color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,0.2);z-index:999;max-width:380px;animation:slideUp 0.3s ease;}
+@keyframes slideUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Search ───────────────────────────────────────────────── */
+.search-box{width:100%;padding:8px 12px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:13px;outline:none;margin-bottom:14px;}
+.search-box:focus{border-color:var(--blue);}
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-main">AP <span>CITY</span> PRAYAANAM</div>
+    <div class="logo-sub">APSRTC · Visakhapatnam</div>
+    <div class="logo-badge">AUTHORITY PORTAL</div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Overview</div>
+    <button class="nav-item active" onclick="showPage('dashboard',this)">📊 Dashboard</button>
+    <button class="nav-item" onclick="showPage('fleet',this)">🚌 Live Fleet <span class="nav-badge nb-green" id="badge-fleet">—</span></button>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">ePass</div>
+    <button class="nav-item" onclick="showPage('epass',this)">🪪 ePass Approval <span class="nav-badge nb-amber" id="badge-pending">—</span></button>
+    <button class="nav-item" onclick="showPage('validate',this)">✅ Validate Pass</button>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Operations</div>
+    <button class="nav-item" onclick="showPage('breakdown',this)">🚨 Breakdowns <span class="nav-badge nb-red" id="badge-breakdown">—</span></button>
+    <button class="nav-item" onclick="showPage('occupancy',this)">👥 Occupancy</button>
+  </div>
+
+  <div class="sidebar-footer">
+    Logged in as:<br><b>BVASSR KRISHNA</b><br>
+    Depot Manager — VSP<br>
+    Last sync: <span id="sync-time">—</span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <div class="topbar">
+    <div class="topbar-title" id="page-title">Operations Dashboard</div>
+    <div style="display:flex;gap:12px;align-items:center;">
+      <div class="live-chip"><div class="live-dot"></div> Live — syncing every 25s</div>
+      <div class="user-chip">
+        <div class="avatar">BK</div>
+        BVASSR KRISHNA
+      </div>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div class="page active" id="page-dashboard">
+    <div class="kpi-grid" style="margin-top:24px;">
+      <div class="kpi-card green"><div class="kpi-label">Buses Running</div><div class="kpi-value" id="kpi-running">—</div><div class="kpi-sub">of total fleet</div></div>
+      <div class="kpi-card amber"><div class="kpi-label">ePass Pending</div><div class="kpi-value" id="kpi-pending">—</div><div class="kpi-sub">awaiting approval</div></div>
+      <div class="kpi-card red"><div class="kpi-label">Active Breakdowns</div><div class="kpi-value" id="kpi-breakdowns">—</div><div class="kpi-sub">open incidents</div></div>
+      <div class="kpi-card blue"><div class="kpi-label">Active ePasses</div><div class="kpi-value" id="kpi-passes">—</div><div class="kpi-sub">valid this month</div></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Fleet Status — Live</div>
+        <table class="tbl">
+          <thead><tr><th>Bus</th><th>Route</th><th>Stop</th><th>Occupancy</th><th>Status</th></tr></thead>
+          <tbody id="dash-fleet-body"><tr><td colspan="5" style="text-align:center;color:var(--mute);padding:20px;">Loading...</td></tr></tbody>
+        </table>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-title">Pending ePass Approvals</div>
+          <table class="tbl">
+            <thead><tr><th>Pass ID</th><th>Applicant</th><th>Type</th><th>Action</th></tr></thead>
+            <tbody id="dash-epass-body"><tr><td colspan="4" style="text-align:center;color:var(--mute);padding:20px;">Loading...</td></tr></tbody>
+          </table>
+        </div>
+
+        <div id="breakdown-alert-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLEET -->
+  <div class="page" id="page-fleet">
+    <div style="margin-top:24px;">
+      <div class="kpi-grid">
+        <div class="kpi-card green"><div class="kpi-label">Running</div><div class="kpi-value" id="fleet-running">—</div></div>
+        <div class="kpi-card amber"><div class="kpi-label">Delayed</div><div class="kpi-value" id="fleet-delayed">—</div></div>
+        <div class="kpi-card red"><div class="kpi-label">Breakdown</div><div class="kpi-value" id="fleet-breakdown">—</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">At Depot</div><div class="kpi-value" id="fleet-depot">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">All Buses — Live Positions</div>
+        <table class="tbl">
+          <thead><tr><th>Registration</th><th>Route</th><th>Current Stop</th><th>Occupancy</th><th>Departure</th><th>Driver</th><th>Status</th><th>Update</th></tr></thead>
+          <tbody id="fleet-body"><tr><td colspan="8" style="text-align:center;color:var(--mute);padding:20px;">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- EPASS APPROVAL -->
+  <div class="page" id="page-epass">
+    <div style="margin-top:24px;">
+      <div class="kpi-grid">
+        <div class="kpi-card green"><div class="kpi-label">Approved</div><div class="kpi-value" id="ep-approved">—</div></div>
+        <div class="kpi-card amber"><div class="kpi-label">Pending</div><div class="kpi-value" id="ep-pending">—</div></div>
+        <div class="kpi-card red"><div class="kpi-label">Rejected</div><div class="kpi-value" id="ep-rejected">—</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Total</div><div class="kpi-value" id="ep-total">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">ePass Applications</div>
+        <input type="text" class="search-box" placeholder="Search by name, pass ID or route..." oninput="filterEPass(this.value)">
+        <table class="tbl">
+          <thead><tr><th>Pass ID</th><th>Applicant</th><th>Type</th><th>Route</th><th>Applied</th><th>Amount</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="epass-body"><tr><td colspan="8" style="text-align:center;color:var(--mute);padding:20px;">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- VALIDATE PASS -->
+  <div class="page" id="page-validate">
+    <div style="margin-top:24px;max-width:700px;">
+      <div class="card">
+        <div class="card-title">ePass Validator — Conductor Tool</div>
+        <p style="font-size:13px;color:var(--mute);margin-bottom:20px;">Enter the passenger's Pass ID or scan their QR code to verify boarding eligibility.</p>
+
+        <input type="text" class="qr-input" id="pass-input" placeholder="Enter Pass ID — e.g. APTC-2025-VSP-0042891"
+          onkeydown="if(event.key==='Enter')validatePass()">
+        <div style="display:flex;gap:10px;margin-bottom:20px;">
+          <button class="btn btn-primary" style="flex:1;padding:12px;font-size:14px;" onclick="validatePass()">🔍 VALIDATE PASS</button>
+          <button class="btn btn-view" style="padding:12px 16px;font-size:13px;" onclick="simulateScan()">📷 Simulate Scan</button>
+        </div>
+
+        <div class="val-result" id="val-result">
+          <div id="val-icon" style="font-size:32px;margin-bottom:8px;"></div>
+          <div id="val-status" style="font-size:18px;font-weight:700;margin-bottom:12px;font-family:'Rajdhani',sans-serif;"></div>
+          <div id="val-details"></div>
+          <div style="display:flex;gap:10px;margin-top:14px;">
+            <button class="btn btn-approve" style="flex:1;padding:10px;font-size:13px;" onclick="logAction('ALLOWED')">✓ Allow Boarding</button>
+            <button class="btn btn-reject" style="flex:1;padding:10px;font-size:13px;" onclick="logAction('DENIED')">✗ Deny Boarding</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BREAKDOWNS -->
+  <div class="page" id="page-breakdown">
+    <div style="margin-top:24px;">
+      <div id="active-breakdown-alerts"></div>
+      <div class="card">
+        <div class="card-title">Add New Breakdown Incident
+          <button class="btn btn-primary" onclick="showBreakdownForm()">+ Report Incident</button>
+        </div>
+        <div id="breakdown-form" style="display:none;background:var(--gray);border-radius:10px;padding:16px;margin-bottom:16px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+            <div><label style="font-size:11px;font-weight:600;color:var(--mute);display:block;margin-bottom:4px;">Bus Registration</label>
+              <input class="qr-input" id="bd-reg" placeholder="e.g. AP 31 U 1000" style="margin:0;"></div>
+            <div><label style="font-size:11px;font-weight:600;color:var(--mute);display:block;margin-bottom:4px;">Route No</label>
+              <input class="qr-input" id="bd-route" placeholder="e.g. 900R" style="margin:0;"></div>
+            <div><label style="font-size:11px;font-weight:600;color:var(--mute);display:block;margin-bottom:4px;">Location</label>
+              <input class="qr-input" id="bd-location" placeholder="e.g. NH-16 km 45" style="margin:0;"></div>
+            <div><label style="font-size:11px;font-weight:600;color:var(--mute);display:block;margin-bottom:4px;">Issue Type</label>
+              <input class="qr-input" id="bd-issue" placeholder="e.g. Tyre Puncture" style="margin:0;"></div>
+            <div><label style="font-size:11px;font-weight:600;color:var(--mute);display:block;margin-bottom:4px;">Severity</label>
+              <select class="qr-input" id="bd-severity" style="margin:0;">
+                <option>low</option><option>medium</option><option>high</option><option>critical</option>
+              </select></div>
+            <div><label style="font-size:11px;font-weight:600;color:var(--mute);display:block;margin-bottom:4px;">Passengers on Board</label>
+              <input class="qr-input" id="bd-pax" type="number" placeholder="0" style="margin:0;"></div>
+          </div>
+          <div style="display:flex;gap:10px;">
+            <button class="btn btn-primary" onclick="submitBreakdown()">Report Breakdown</button>
+            <button class="btn btn-view" onclick="document.getElementById('breakdown-form').style.display='none'">Cancel</button>
+          </div>
+        </div>
+
+        <table class="tbl">
+          <thead><tr><th>Incident ID</th><th>Bus</th><th>Route</th><th>Issue</th><th>Location</th><th>Severity</th><th>Passengers</th><th>Status</th><th>Action</th></tr></thead>
+          <tbody id="breakdown-body"><tr><td colspan="9" style="text-align:center;color:var(--mute);padding:20px;">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- OCCUPANCY -->
+  <div class="page" id="page-occupancy">
+    <div style="margin-top:24px;">
+      <div class="kpi-grid">
+        <div class="kpi-card green"><div class="kpi-label">Avg Occupancy</div><div class="kpi-value" id="occ-avg">—</div><div class="kpi-sub">all running buses</div></div>
+        <div class="kpi-card red"><div class="kpi-label">Almost Full</div><div class="kpi-value" id="occ-full">—</div><div class="kpi-sub">above 85%</div></div>
+        <div class="kpi-card amber"><div class="kpi-label">Filling Up</div><div class="kpi-value" id="occ-mid">—</div><div class="kpi-sub">60–85%</div></div>
+        <div class="kpi-card blue"><div class="kpi-label">Total On Board</div><div class="kpi-value" id="occ-total">—</div><div class="kpi-sub">passengers now</div></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Route-wise Occupancy — Live</div>
+        <table class="tbl">
+          <thead><tr><th>Registration</th><th>Route</th><th>Current Stop</th><th>Occupancy</th><th>Seats Used</th><th>Capacity</th><th>Status</th></tr></thead>
+          <tbody id="occ-body"><tr><td colspan="7" style="text-align:center;color:var(--mute);padding:20px;">Loading...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+// ── Supabase init ─────────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://cestbejutcylclapdqqy.supabase.co'
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNlc3RiZWp1dGN5bGNsYXBkcXF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzMDc4ODUsImV4cCI6MjA5Mzg4Mzg4NX0.lLYYWmeLsxVerlS_cuyqNxiF8lgw8Tmnxt7IF9mhA4c'
+const { createClient } = supabase
+const db = createClient(SUPABASE_URL, SUPABASE_ANON)
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allBuses = [], allEpasses = [], allBreakdowns = [], allRoutes = []
+let currentPassData = null
+
+const PAGE_TITLES = {
+  dashboard: 'Operations Dashboard', fleet: 'Live Fleet Tracker',
+  epass: 'ePass Approval', validate: 'Pass Validator',
+  breakdown: 'Breakdown Management', occupancy: 'Occupancy Monitor',
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showPage(name, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
+  document.getElementById('page-' + name).classList.add('active')
+  document.getElementById('page-title').textContent = PAGE_TITLES[name] || name
+  if (el) el.classList.add('active')
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function occColor(pct) {
+  if (pct >= 85) return '#C0392B'
+  if (pct >= 60) return '#F5A623'
+  return '#1A7A4A'
+}
+function occBar(pct, w=80) {
+  return `<div class="occ-track" style="width:${w}px"><div class="occ-fill" style="width:${pct}%;background:${occColor(pct)}"></div></div><span style="font-size:11px;font-weight:700;color:${occColor(pct)}">${pct}%</span>`
+}
+function statusPill(s) {
+  const map = {running:'pill-green',delayed:'pill-amber',depot:'pill-gray',breakdown:'pill-red'}
+  return `<span class="pill ${map[s]||'pill-gray'}">${s==='running'?'<span class="live-dot"></span> ':''} ${s}</span>`
+}
+function epStatusPill(s) {
+  const map = {active:'pill-green',pending:'pill-amber',rejected:'pill-red',expired:'pill-gray'}
+  return `<span class="pill ${map[s]||'pill-gray'}">${s.toUpperCase()}</span>`
+}
+function passTypePill(t) {
+  const map = {monthly:'pill-purple',daily:'pill-blue',student:'pill-green',senior:'pill-amber'}
+  return `<span class="pill ${map[t]||'pill-blue'}">${t}</span>`
+}
+function toast(msg) {
+  const t = document.createElement('div')
+  t.className = 'toast'; t.textContent = msg
+  document.body.appendChild(t)
+  setTimeout(() => t.remove(), 4000)
+}
+function fmtDate(d) {
+  if (!d) return '—'
+  return new Date(d).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' })
+}
+
+// ── Data fetch ────────────────────────────────────────────────────────────────
+async function fetchAll() {
+  const [buseRes, epRes, bdRes, rtRes] = await Promise.all([
+    db.from('buses').select('*').order('route_no'),
+    db.from('epasses').select('*').order('created_at', { ascending: false }),
+    db.from('breakdown_cases').select('*').order('reported_at', { ascending: false }),
+    db.from('routes').select('route_no,from_stop,to_stop,capacity,depot'),
+  ])
+  if (buseRes.data) allBuses = buseRes.data
+  if (epRes.data)   allEpasses = epRes.data
+  if (bdRes.data)   allBreakdowns = bdRes.data
+  if (rtRes.data)   allRoutes = rtRes.data
+  renderAll()
+  document.getElementById('sync-time').textContent = new Date().toLocaleTimeString()
+}
+
+function renderAll() {
+  renderDashboard()
+  renderFleet()
+  renderEPass()
+  renderBreakdown()
+  renderOccupancy()
+  updateBadges()
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const running   = allBuses.filter(b => b.status === 'running').length
+  const pending   = allEpasses.filter(e => e.status === 'pending').length
+  const breakdowns = allBreakdowns.filter(b => b.status !== 'resolved').length
+  const active    = allEpasses.filter(e => e.status === 'active').length
+
+  document.getElementById('kpi-running').textContent   = running
+  document.getElementById('kpi-pending').textContent   = pending
+  document.getElementById('kpi-breakdowns').textContent = breakdowns
+  document.getElementById('kpi-passes').textContent    = active
+
+  // Fleet table (first 6)
+  const fleetRows = allBuses.slice(0, 6).map(b => {
+    const route = allRoutes.find(r => r.route_no === b.route_no)
+    const pct   = route ? Math.round((b.seats_occupied / route.capacity) * 100) : 0
+    return `<tr>
+      <td><b>${b.registration}</b></td>
+      <td>${b.route_no}</td>
+      <td style="font-size:11px">${b.current_stop_index ? `Stop #${b.current_stop_index}` : '—'}</td>
+      <td>${occBar(pct, 60)}</td>
+      <td>${statusPill(b.status)}</td>
+    </tr>`
+  }).join('')
+  document.getElementById('dash-fleet-body').innerHTML = fleetRows || '<tr><td colspan="5" style="text-align:center;color:var(--mute);">No data</td></tr>'
+
+  // Pending ePass (first 4)
+  const epRows = allEpasses.filter(e => e.status === 'pending').slice(0, 4).map(ep => `
+    <tr>
+      <td style="font-size:10px;color:var(--mute)">${ep.pass_id?.slice(-8) || '—'}</td>
+      <td><b>${ep.holder_name}</b></td>
+      <td>${passTypePill(ep.pass_type)}</td>
+      <td class="btn-row">
+        <button class="btn btn-approve" onclick="approvePass('${ep.id}','${ep.pass_id}',this)">✓</button>
+        <button class="btn btn-reject"  onclick="rejectPass('${ep.id}','${ep.pass_id}',this)">✗</button>
+      </td>
+    </tr>`).join('')
+  document.getElementById('dash-epass-body').innerHTML = epRows || '<tr><td colspan="4" style="text-align:center;color:var(--mute);padding:16px;">No pending approvals</td></tr>'
+
+  // Breakdown alerts
+  const activeBreakdowns = allBreakdowns.filter(b => b.status !== 'resolved')
+  const alertHtml = activeBreakdowns.map(b => `
+    <div class="breakdown-alert">
+      <div style="font-size:20px;flex-shrink:0;">🚨</div>
+      <div>
+        <div class="alert-title">BREAKDOWN — ${b.bus_registration} (Route ${b.route_no})</div>
+        <div class="alert-sub">${b.location} · ${b.issue_type} · ${b.passengers_on_board} passengers · ${new Date(b.reported_at).toLocaleTimeString()}</div>
+        <div class="alert-actions">
+          <button class="btn btn-primary" onclick="toast('Recovery vehicle dispatched')">Dispatch Recovery</button>
+          <button class="btn btn-amber" onclick="toast('SMS sent to ${b.passengers_on_board} passengers')">Notify Passengers</button>
+          <button class="btn btn-approve" onclick="resolveBreakdown('${b.id}',this)">✓ Resolve</button>
+        </div>
+      </div>
+    </div>`).join('')
+  document.getElementById('breakdown-alert-container').innerHTML = alertHtml
+}
+
+// ── Fleet ─────────────────────────────────────────────────────────────────────
+function renderFleet() {
+  const counts = { running: 0, delayed: 0, breakdown: 0, depot: 0 }
+  allBuses.forEach(b => { if (counts[b.status] !== undefined) counts[b.status]++ })
+  document.getElementById('fleet-running').textContent   = counts.running
+  document.getElementById('fleet-delayed').textContent   = counts.delayed
+  document.getElementById('fleet-breakdown').textContent = counts.breakdown
+  document.getElementById('fleet-depot').textContent     = counts.depot
+
+  const rows = allBuses.map(b => {
+    const route = allRoutes.find(r => r.route_no === b.route_no)
+    const pct   = route ? Math.round((b.seats_occupied / route.capacity) * 100) : 0
+    return `<tr>
+      <td><b>${b.registration}</b></td>
+      <td>${b.route_no}</td>
+      <td style="font-size:11px">Stop #${b.current_stop_index || 1}</td>
+      <td>${occBar(pct)}</td>
+      <td>${b.departure_time || '—'}</td>
+      <td style="font-size:11px">${b.driver_name || '—'}</td>
+      <td>${statusPill(b.status)}</td>
+      <td>
+        <select onchange="updateBusStatus('${b.id}',this.value)" style="font-size:11px;padding:3px 6px;border:1px solid #E2E8F0;border-radius:6px;">
+          ${['running','delayed','depot','breakdown'].map(s => `<option ${b.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+    </tr>`
+  }).join('')
+  document.getElementById('fleet-body').innerHTML = rows || '<tr><td colspan="8" style="text-align:center;color:var(--mute);padding:20px;">No buses</td></tr>'
+}
+
+// ── ePass ─────────────────────────────────────────────────────────────────────
+function renderEPass(filter = '') {
+  const counts = { active: 0, pending: 0, rejected: 0 }
+  allEpasses.forEach(e => { if (counts[e.status] !== undefined) counts[e.status]++ })
+  document.getElementById('ep-approved').textContent = counts.active
+  document.getElementById('ep-pending').textContent  = counts.pending
+  document.getElementById('ep-rejected').textContent = counts.rejected
+  document.getElementById('ep-total').textContent    = allEpasses.length
+
+  const filtered = filter
+    ? allEpasses.filter(e =>
+        e.holder_name?.toLowerCase().includes(filter) ||
+        e.pass_id?.toLowerCase().includes(filter) ||
+        e.route?.toLowerCase().includes(filter))
+    : allEpasses
+
+  const rows = filtered.map(ep => `
+    <tr data-status="${ep.status}">
+      <td style="font-size:10px;color:var(--mute)">${ep.pass_id || '—'}</td>
+      <td><b>${ep.holder_name}</b></td>
+      <td>${passTypePill(ep.pass_type)}</td>
+      <td style="font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ep.route || '—'}</td>
+      <td style="font-size:11px">${fmtDate(ep.created_at)}</td>
+      <td style="font-weight:600">₹${ep.amount || 0}</td>
+      <td>${epStatusPill(ep.status)}</td>
+      <td class="btn-row">
+        ${ep.status === 'pending'
+          ? `<button class="btn btn-approve" onclick="approvePass('${ep.id}','${ep.pass_id}',this)">✓ Approve</button>
+             <button class="btn btn-reject"  onclick="rejectPass('${ep.id}','${ep.pass_id}',this)">✗ Reject</button>`
+          : `<button class="btn btn-view">View</button>`
+        }
+      </td>
+    </tr>`).join('')
+  document.getElementById('epass-body').innerHTML = rows || '<tr><td colspan="8" style="text-align:center;color:var(--mute);padding:20px;">No applications</td></tr>'
+}
+
+function filterEPass(q) { renderEPass(q.toLowerCase()) }
+
+// ── Breakdown ─────────────────────────────────────────────────────────────────
+function renderBreakdown() {
+  // Active alerts
+  const active = allBreakdowns.filter(b => b.status !== 'resolved')
+  const alertHtml = active.map(b => `
+    <div class="breakdown-alert">
+      <div style="font-size:20px;">🚨</div>
+      <div style="flex:1">
+        <div class="alert-title">${b.bus_registration} — Route ${b.route_no} — ${b.issue_type}</div>
+        <div class="alert-sub">${b.location} · ${b.passengers_on_board} passengers · <span class="pill pill-${b.severity==='high'||b.severity==='critical'?'red':b.severity==='medium'?'amber':'gray'}">${b.severity}</span></div>
+        <div class="alert-actions">
+          <button class="btn btn-primary" onclick="toast('Recovery dispatched for ${b.bus_registration}')">Dispatch Recovery</button>
+          <button class="btn btn-amber" onclick="toast('Passengers notified via SMS')">Notify Passengers</button>
+          <button class="btn btn-approve" onclick="resolveBreakdown('${b.id}',this)">✓ Resolve</button>
+        </div>
+      </div>
+    </div>`).join('')
+  document.getElementById('active-breakdown-alerts').innerHTML = alertHtml
+
+  // History table
+  const rows = allBreakdowns.map(b => `
+    <tr>
+      <td style="font-size:11px">${b.incident_id || b.id?.slice(0,8)}</td>
+      <td><b>${b.bus_registration}</b></td>
+      <td>${b.route_no}</td>
+      <td>${b.issue_type}</td>
+      <td style="font-size:11px">${b.location}</td>
+      <td><span class="pill pill-${b.severity==='high'||b.severity==='critical'?'red':b.severity==='medium'?'amber':'gray'}">${b.severity}</span></td>
+      <td style="text-align:center">${b.passengers_on_board}</td>
+      <td><span class="pill pill-${b.status==='resolved'?'green':b.status==='under_recovery'?'amber':'red'}">${b.status}</span></td>
+      <td>${b.status !== 'resolved' ? `<button class="btn btn-approve" onclick="resolveBreakdown('${b.id}',this)">Resolve</button>` : '—'}</td>
+    </tr>`).join('')
+  document.getElementById('breakdown-body').innerHTML = rows || '<tr><td colspan="9" style="text-align:center;color:var(--mute);padding:20px;">No incidents</td></tr>'
+}
+
+// ── Occupancy ─────────────────────────────────────────────────────────────────
+function renderOccupancy() {
+  const running = allBuses.filter(b => b.status === 'running')
+  if (running.length === 0) return
+
+  let totalPct = 0, fullCount = 0, midCount = 0, totalPassengers = 0
+  running.forEach(b => {
+    const route = allRoutes.find(r => r.route_no === b.route_no)
+    const cap   = route?.capacity || 52
+    const pct   = Math.round((b.seats_occupied / cap) * 100)
+    totalPct   += pct
+    totalPassengers += b.seats_occupied
+    if (pct >= 85) fullCount++
+    else if (pct >= 60) midCount++
+  })
+
+  document.getElementById('occ-avg').textContent   = Math.round(totalPct / running.length) + '%'
+  document.getElementById('occ-full').textContent  = fullCount
+  document.getElementById('occ-mid').textContent   = midCount
+  document.getElementById('occ-total').textContent = totalPassengers
+
+  const rows = allBuses.map(b => {
+    const route = allRoutes.find(r => r.route_no === b.route_no)
+    const cap   = route?.capacity || 52
+    const pct   = Math.round((b.seats_occupied / cap) * 100)
+    return `<tr>
+      <td><b>${b.registration}</b></td>
+      <td>${b.route_no}</td>
+      <td style="font-size:11px">Stop #${b.current_stop_index || 1}</td>
+      <td>${occBar(pct, 100)}</td>
+      <td>${b.seats_occupied}</td>
+      <td>${cap}</td>
+      <td>${statusPill(b.status)}</td>
+    </tr>`
+  }).join('')
+  document.getElementById('occ-body').innerHTML = rows
+}
+
+// ── Badge counts ──────────────────────────────────────────────────────────────
+function updateBadges() {
+  document.getElementById('badge-fleet').textContent     = allBuses.filter(b => b.status === 'running').length
+  document.getElementById('badge-pending').textContent   = allEpasses.filter(e => e.status === 'pending').length
+  document.getElementById('badge-breakdown').textContent = allBreakdowns.filter(b => b.status !== 'resolved').length
+}
+
+// ── Approve / Reject ePass ────────────────────────────────────────────────────
+async function approvePass(id, passId, btn) {
+  btn.disabled = true
+  const { error } = await db.from('epasses').update({
+    status: 'active', approved_by: 'BVASSR KRISHNA', approved_at: new Date().toISOString()
+  }).eq('id', id)
+  if (!error) {
+    toast(`✓ ePass ${passId?.slice(-8)} approved — passenger notified`)
+    await fetchAll()
+  } else {
+    toast('Error: ' + error.message)
+    btn.disabled = false
+  }
+}
+
+async function rejectPass(id, passId, btn) {
+  const reason = prompt('Enter rejection reason:') || 'Document verification failed'
+  if (!reason) return
+  btn.disabled = true
+  const { error } = await db.from('epasses').update({
+    status: 'rejected', rejection_reason: reason
+  }).eq('id', id)
+  if (!error) {
+    toast(`✗ ePass ${passId?.slice(-8)} rejected. Reason sent to passenger.`)
+    await fetchAll()
+  } else {
+    btn.disabled = false
+  }
+}
+
+// ── Update bus status ─────────────────────────────────────────────────────────
+async function updateBusStatus(id, newStatus) {
+  await db.from('buses').update({ status: newStatus, last_gps_update: new Date().toISOString() }).eq('id', id)
+  toast(`Bus status updated to: ${newStatus}`)
+  await fetchAll()
+}
+
+// ── Resolve breakdown ─────────────────────────────────────────────────────────
+async function resolveBreakdown(id, btn) {
+  btn.disabled = true
+  await db.from('breakdown_cases').update({ status: 'resolved', resolved_at: new Date().toISOString() }).eq('id', id)
+  toast('✓ Breakdown marked as resolved. Fleet dashboard updated.')
+  await fetchAll()
+}
+
+// ── Report new breakdown ──────────────────────────────────────────────────────
+function showBreakdownForm() {
+  const f = document.getElementById('breakdown-form')
+  f.style.display = f.style.display === 'none' ? 'block' : 'none'
+}
+
+async function submitBreakdown() {
+  const reg  = document.getElementById('bd-reg').value.trim()
+  const route= document.getElementById('bd-route').value.trim()
+  const loc  = document.getElementById('bd-location').value.trim()
+  const issue= document.getElementById('bd-issue').value.trim()
+  const sev  = document.getElementById('bd-severity').value
+  const pax  = parseInt(document.getElementById('bd-pax').value) || 0
+  if (!reg || !route || !loc || !issue) { toast('Please fill all required fields'); return }
+
+  const incId = `INC-${new Date().getFullYear()}-${String(allBreakdowns.length + 1).padStart(3, '0')}`
+  const { error } = await db.from('breakdown_cases').insert({
+    incident_id: incId, bus_registration: reg, route_no: route,
+    location: loc, issue_type: issue, severity: sev,
+    passengers_on_board: pax, recovery_sent: false, status: 'open',
+    remarks: '', reported_at: new Date().toISOString(),
+  })
+  if (!error) {
+    toast(`🚨 Breakdown reported: ${incId}`)
+    document.getElementById('breakdown-form').style.display = 'none'
+    await fetchAll()
+  } else {
+    toast('Error: ' + error.message)
+  }
+}
+
+// ── Pass validator ────────────────────────────────────────────────────────────
+async function validatePass() {
+  const passId = document.getElementById('pass-input').value.trim()
+  if (!passId) { toast('Enter a pass ID'); return }
+
+  const { data } = await db.from('epasses').select('*').eq('pass_id', passId).single()
+  const resultDiv = document.getElementById('val-result')
+  resultDiv.className = 'val-result show'
+
+  if (!data) {
+    resultDiv.classList.add('val-invalid')
+    resultDiv.classList.remove('val-valid')
+    document.getElementById('val-icon').textContent    = '❌'
+    document.getElementById('val-status').textContent  = 'INVALID — Pass not found'
+    document.getElementById('val-status').style.color  = 'var(--red)'
+    document.getElementById('val-details').innerHTML   = `<div style="font-size:13px;color:var(--red)">No pass with ID "${passId}" exists in the database.</div>`
+    currentPassData = null
+    return
+  }
+
+  currentPassData = data
+  const isValid   = data.status === 'active' && new Date(data.valid_until) >= new Date()
+  const isExpired = new Date(data.valid_until) < new Date()
+
+  if (isValid) {
+    resultDiv.classList.add('val-valid')
+    resultDiv.classList.remove('val-invalid')
+    document.getElementById('val-icon').textContent   = '✅'
+    document.getElementById('val-status').textContent = 'VALID — ALLOW BOARDING'
+    document.getElementById('val-status').style.color = 'var(--green)'
+  } else {
+    resultDiv.classList.add('val-invalid')
+    resultDiv.classList.remove('val-valid')
+    document.getElementById('val-icon').textContent   = '❌'
+    const reason = data.status === 'pending' ? 'Pending verification — not yet active'
+      : data.status === 'rejected' ? 'Pass was rejected'
+      : isExpired ? 'Pass has expired'
+      : 'Pass is not active'
+    document.getElementById('val-status').textContent = `INVALID — ${reason}`
+    document.getElementById('val-status').style.color = 'var(--red)'
+  }
+
+  document.getElementById('val-details').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;">
+      ${[
+        ['Pass Holder', data.holder_name],
+        ['Pass ID', data.pass_id],
+        ['Pass Type', data.pass_type],
+        ['Route', data.route],
+        ['Valid Until', fmtDate(data.valid_until)],
+        ['Status', data.status.toUpperCase()],
+      ].map(([l,v]) => `<div style="background:rgba(0,0,0,0.04);padding:8px 10px;border-radius:8px;">
+        <div style="font-size:10px;color:var(--mute)">${l}</div>
+        <div style="font-size:13px;font-weight:600">${v}</div>
+      </div>`).join('')}
+    </div>`
+}
+
+function simulateScan() {
+  const demoPass = allEpasses.find(e => e.status === 'active') || allEpasses[0]
+  if (demoPass) {
+    document.getElementById('pass-input').value = demoPass.pass_id
+    validatePass()
+  } else {
+    toast('No passes in database yet. Register a pass first.')
+  }
+}
+
+function logAction(action) {
+  const passId = currentPassData?.pass_id || '—'
+  toast(`${action === 'ALLOWED' ? '✓ Boarding allowed' : '✗ Boarding denied'} — ${passId} logged at ${new Date().toLocaleTimeString()}`)
+}
+
+// ── Init & auto-refresh ───────────────────────────────────────────────────────
+fetchAll()
+setInterval(fetchAll, 25000)
+setInterval(() => {
+  const el = document.getElementById('sync-time')
+  if (el) el.textContent = new Date().toLocaleTimeString()
+}, 1000)
+</script>
+</body>
+</html>
