@@ -80,6 +80,30 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--gray);min-height:1
 .log-warn{color:#9A6700}
 
 .footer{position:fixed;bottom:0;left:0;right:0;background:var(--blue);color:rgba(255,255,255,.6);font-size:10px;text-align:center;padding:7px}
+
+/* Occupancy donut + board/alight controls */
+.occ-row{display:flex;align-items:center;gap:16px}
+.occ-donut{position:relative;width:76px;height:76px;flex-shrink:0}
+.occ-donut svg{width:76px;height:76px;transform:rotate(-90deg)}
+.occ-donut-pct{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:17px;font-weight:800;color:var(--text)}
+.occ-detail{flex:1}
+.occ-count{font-size:14px;font-weight:700;color:var(--text)}
+.occ-sub{font-size:11px;color:var(--mute);margin-top:2px}
+.occ-btns{display:flex;gap:10px;margin-top:14px}
+.occ-btn{flex:1;padding:16px 0;border:none;border-radius:12px;font-size:22px;font-weight:800;cursor:pointer;transition:transform .1s;display:flex;flex-direction:column;align-items:center;gap:2px}
+.occ-btn:active{transform:scale(.95)}
+.occ-btn-minus{background:#FDECEA;color:var(--red)}
+.occ-btn-plus{background:#E8F5E9;color:var(--green)}
+.occ-btn:disabled{background:#F0F1F3;color:#C2C8D2;cursor:not-allowed;transform:none}
+.occ-btn-lbl{font-size:10px;font-weight:700;letter-spacing:.3px}
+
+/* ePass on-board registration form */
+.ff{margin-bottom:11px}
+.ff label{font-size:10px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:5px}
+.ff input,.ff select{width:100%;padding:10px 12px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:14px;color:var(--text);outline:none;background:white}
+.ff input:focus,.ff select:focus{border-color:var(--blue)}
+.ff-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ep-result{display:none;margin-top:12px;padding:12px 14px;background:#E8F5E9;border:1.5px solid #86EFAC;border-radius:10px;font-size:12px;color:#166534;font-weight:600}
 </style>
 </head>
 <body>
@@ -112,6 +136,77 @@ body{font-family:'Segoe UI',Arial,sans-serif;background:var(--gray);min-height:1
     <div class="info-row">Last Supabase push: <b id="lastPush">Never</b></div>
     <div class="info-row">Stop index written: <b id="idxWritten">—</b></div>
     <button class="btn btn-off" id="btnMain" disabled onclick="startTracking()">📍 START GPS TRACKING</button>
+  </div>
+
+  <!-- OCCUPANCY & BOARDING -->
+  <div class="card">
+    <div class="clabel">
+      📊 Occupancy &amp; Boarding
+      <span id="occSyncLbl" style="color:var(--mute)">—</span>
+    </div>
+    <div class="occ-row">
+      <div class="occ-donut">
+        <svg viewBox="0 0 76 76">
+          <circle cx="38" cy="38" r="28" fill="none" stroke="#E2E8F0" stroke-width="9"/>
+          <circle cx="38" cy="38" r="28" fill="none" stroke="var(--green)" stroke-width="9"
+            stroke-dasharray="175.9" id="occCircle" stroke-dashoffset="175.9" stroke-linecap="round"
+            style="transition:stroke-dashoffset .4s, stroke .4s"/>
+        </svg>
+        <div class="occ-donut-pct" id="occPctTxt">0%</div>
+      </div>
+      <div class="occ-detail">
+        <div class="occ-count" id="occCountTxt">0 / 52 seated</div>
+        <div class="occ-sub">Writes to <b>buses.seats_occupied</b> instantly</div>
+      </div>
+    </div>
+    <div class="occ-btns">
+      <button class="occ-btn occ-btn-minus" id="minusBtn" onclick="alightPassenger()">
+        <span>−</span><span class="occ-btn-lbl">ALIGHTED</span>
+      </button>
+      <button class="occ-btn occ-btn-plus" id="plusBtn" onclick="boardPassenger()">
+        <span>+</span><span class="occ-btn-lbl">BOARDED</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ON-BOARD EPASS REGISTRATION -->
+  <div class="card">
+    <div class="clabel">🪪 Register ePass — On-board</div>
+    <div class="ff">
+      <label>Passenger Full Name</label>
+      <input type="text" id="epName" placeholder="As per Aadhaar">
+    </div>
+    <div class="ff-grid">
+      <div class="ff">
+        <label>Aadhaar Number</label>
+        <input type="tel" id="epAadhaar" placeholder="12-digit number" maxlength="12">
+      </div>
+      <div class="ff">
+        <label>Mobile Number</label>
+        <input type="tel" id="epMobile" placeholder="10-digit number" maxlength="10">
+      </div>
+    </div>
+    <div class="ff-grid">
+      <div class="ff">
+        <label>Pass Type</label>
+        <select id="epType">
+          <option value="daily">Daily — ₹50</option>
+          <option value="monthly" selected>Monthly — ₹350</option>
+          <option value="student">Student — ₹150</option>
+          <option value="senior">Senior Citizen — ₹175</option>
+        </select>
+      </div>
+      <div class="ff">
+        <label>Payment Method</label>
+        <select id="epPayment">
+          <option value="Cash">Cash (on-board)</option>
+          <option value="UPI One-time">UPI One-time</option>
+          <option value="UPI Autopay">UPI Autopay</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn btn-go" id="epSubmitBtn" onclick="submitEPass()">✓ REGISTER &amp; BOARD PASSENGER</button>
+    <div class="ep-result" id="epResult"><span id="epResultTxt"></span></div>
   </div>
 
   <!-- STOP TRACKER -->
@@ -168,6 +263,15 @@ async function sbPatch(table, qs, body) {
   if (!r.ok) throw new Error(`PATCH /${table} → HTTP ${r.status}: ${await r.text()}`)
 }
 
+async function sbPost(table, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: { ...SB_HDR, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(body)
+  })
+  if (!r.ok) throw new Error(`POST /${table} → HTTP ${r.status}: ${await r.text()}`)
+}
+
 // ══════════════════════════════════════════════
 // HAVERSINE FORMULA
 // Returns distance in METRES between two GPS points
@@ -195,6 +299,107 @@ let curLat     = null
 let curLon     = null
 let curStopIdx = 1
 let tracking   = false
+let capacity   = 52      // from routes.capacity — refreshed in boot()
+let occupied   = 0       // mirrors buses.seats_occupied
+
+// ── Occupancy donut + board/alight ─────────────
+const OCC_CIRC = 175.9   // 2·π·28, matches the SVG r=28 above
+
+function updateOccupancyUI() {
+  const pct = capacity > 0 ? Math.min(100, Math.round((occupied / capacity) * 100)) : 0
+  const offset = OCC_CIRC - (pct / 100) * OCC_CIRC
+  const circle = document.getElementById('occCircle')
+  circle.setAttribute('stroke-dashoffset', offset)
+  circle.setAttribute('stroke', pct >= 85 ? 'var(--red)' : pct >= 60 ? 'var(--gold)' : 'var(--green)')
+  document.getElementById('occPctTxt').textContent = pct + '%'
+  document.getElementById('occCountTxt').textContent = `${occupied} / ${capacity} seated`
+  document.getElementById('minusBtn').disabled = occupied <= 0
+  document.getElementById('plusBtn').disabled  = occupied >= capacity
+}
+
+async function pushOccupancy() {
+  if (!busReg) { log('No bus registration found — cannot sync occupancy', 'err'); return }
+  const lbl = document.getElementById('occSyncLbl')
+  lbl.textContent = 'Syncing…'
+  try {
+    await sbPatch('buses', `route_no=eq.${ROUTE}&registration=eq.${encodeURIComponent(busReg)}`,
+      { seats_occupied: occupied })
+    lbl.textContent = 'Synced ✓'
+    log(`Occupancy synced → ${occupied}/${capacity}`, 'ok')
+  } catch (e) {
+    lbl.textContent = 'Sync failed'
+    log('Occupancy sync failed: ' + e.message, 'err')
+  }
+}
+
+function boardPassenger(n = 1) {
+  occupied = Math.min(capacity, occupied + n)
+  updateOccupancyUI()
+  pushOccupancy()
+}
+
+function alightPassenger(n = 1) {
+  occupied = Math.max(0, occupied - n)
+  updateOccupancyUI()
+  pushOccupancy()
+}
+
+// ── On-board ePass registration ────────────────
+function genPassId() {
+  const year = new Date().getFullYear()
+  const num  = Math.floor(40000 + Math.random() * 9999)
+  return `APTC-${year}-VSP-${num.toString().padStart(7, '0')}`
+}
+
+async function submitEPass() {
+  const name     = document.getElementById('epName').value.trim()
+  const aadhaar  = document.getElementById('epAadhaar').value.trim()
+  const mobile   = document.getElementById('epMobile').value.trim()
+  const passType = document.getElementById('epType').value
+  const payment  = document.getElementById('epPayment').value
+  const btn      = document.getElementById('epSubmitBtn')
+
+  if (!name)                       { alert('Enter the passenger\'s full name'); return }
+  if (!/^\d{12}$/.test(aadhaar))   { alert('Enter a valid 12-digit Aadhaar number'); return }
+  if (!/^\d{10}$/.test(mobile))    { alert('Enter a valid 10-digit mobile number'); return }
+
+  const passId     = genPassId()
+  const amount     = { monthly: 350, student: 150, senior: 175, daily: 50 }[passType] || 350
+  const validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+  btn.disabled = true
+  btn.textContent = 'Registering…'
+  try {
+    await sbPost('epasses', {
+      pass_id:        passId,
+      holder_name:    name,
+      aadhaar_last4:  aadhaar.slice(-4),
+      mobile:         mobile,
+      pass_type:      passType,
+      route:          ROUTE,
+      payment_method: payment,
+      amount:         amount,
+      status:         'active',   // conductor-verified in person — no backend approval needed
+      valid_from:     new Date().toISOString().split('T')[0],
+      valid_until:    validUntil,
+      auto_renewal:   payment === 'UPI Autopay',
+    })
+    log(`✅ ePass registered: ${passId} — ${name} (${passType})`, 'ok')
+    document.getElementById('epResult').style.display = 'block'
+    document.getElementById('epResultTxt').textContent = `Pass ${passId} issued to ${name} — boarded ✓`
+    document.getElementById('epName').value = ''
+    document.getElementById('epAadhaar').value = ''
+    document.getElementById('epMobile').value = ''
+    // Registering a pass IS a boarding event — count it in occupancy
+    boardPassenger(1)
+  } catch (e) {
+    log('ePass registration failed: ' + e.message, 'err')
+    alert('Registration failed: ' + e.message)
+  } finally {
+    btn.disabled = false
+    btn.textContent = '✓ REGISTER & BOARD PASSENGER'
+  }
+}
 
 // ── Logging ────────────────────────────────────
 function log(msg, type='info') {
@@ -388,10 +593,11 @@ async function boot() {
   // 2 — load bus row
   try {
     const rows = await sbGet('buses',
-      `route_no=eq.${ROUTE}&limit=1&select=registration,current_stop_index,status`)
+      `route_no=eq.${ROUTE}&limit=1&select=registration,current_stop_index,status,seats_occupied`)
     if (rows.length > 0) {
       busReg     = rows[0].registration
       curStopIdx = rows[0].current_stop_index || 1
+      occupied   = rows[0].seats_occupied || 0
       log(`✅ Bus found: ${busReg} · status: ${rows[0].status}`, 'ok')
       renderStops(curStopIdx)
     } else {
@@ -405,7 +611,16 @@ async function boot() {
     }
   }
 
-  // 3 — enable button only if both loaded
+  // 3 — load route capacity for the occupancy donut
+  try {
+    const routeRows = await sbGet('routes', `route_no=eq.${ROUTE}&limit=1&select=capacity`)
+    if (routeRows.length > 0 && routeRows[0].capacity) capacity = routeRows[0].capacity
+  } catch (e) {
+    log('Route capacity fetch failed, using default 52: ' + e.message, 'warn')
+  }
+  updateOccupancyUI()
+
+  // 4 — enable button only if both loaded
   const btn = document.getElementById('btnMain')
   if (stops.length > 0 && busReg) {
     btn.disabled = false
