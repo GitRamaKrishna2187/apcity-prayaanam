@@ -83,6 +83,15 @@ function timeStrToMins(t: string): number {
   return h * 60 + m
 }
 
+// A bus with no departure_time/arrival_time has no timetable — it is a REAL GPS-TRACKED
+// bus (e.g. route 2047's phone-GPS + Haversine pipeline). For these, the app must trust
+// current_stop_index and status exactly as written to Supabase by the tracker, and must
+// never simulate position/occupancy/completion from the clock. hasSchedule() is the
+// single switch between "clock-simulated" buses and "live GPS, trust the DB" buses.
+function hasSchedule(bus: { departure_time?: string; arrival_time?: string } | null | undefined): boolean {
+  return !!bus?.departure_time && !!bus?.arrival_time
+}
+
 function minsToTimeStr(totalMins: number): string {
   const m = totalMins % (24 * 60)
   const hh = Math.floor(m / 60)
@@ -268,8 +277,12 @@ export default function BusDetail() {
         const sorted = [...bRes.data].sort((a, b) =>
           timeStrToMins(a.departure_time) - timeStrToMins(b.departure_time))
 
+        // 0. Live GPS bus with no timetable — always a valid pick, never "completed"
+        const liveGPSBus = sorted.find(b => !hasSchedule(b) && b.status !== 'depot')
+
         // 1. Bus currently mid-journey right now
         const midJourney = sorted.find(b => {
+          if (!hasSchedule(b)) return false
           const dep = timeStrToMins(b.departure_time)
           const arr = timeStrToMins(b.arrival_time)
           return dep <= now && now <= arr
@@ -277,17 +290,19 @@ export default function BusDetail() {
 
         // 2. Next bus yet to depart (soonest future departure)
         const nextDeparture = sorted.find(b => {
+          if (!hasSchedule(b)) return false
           const dep = timeStrToMins(b.departure_time)
           return dep > now
         })
 
         // 3. Any non-completed bus (breakdown / delayed that may still need attention)
         const nonCompleted = sorted.find(b => {
+          if (!hasSchedule(b)) return true
           const arr = timeStrToMins(b.arrival_time)
           return now <= arr || b.status === 'breakdown' || b.status === 'delayed'
         })
 
-        const bestBus = midJourney || nextDeparture || nonCompleted || sorted[0]
+        const bestBus = liveGPSBus || midJourney || nextDeparture || nonCompleted || sorted[0]
         setSelBus(bestBus || null)
         setBuses(sorted)  // Use sorted order for selector display
       }
@@ -320,16 +335,21 @@ export default function BusDetail() {
     </div>
   )
 
-  // ── KEY FIX: compute stop index from IST time, not from database ──────────
+  // ── Stop index: clock-simulated for scheduled buses, DB-trusted for live GPS buses ──
   const totalStops = stops.length || 5
+  const busIsLiveGPS = hasSchedule(selBus) === false && !!selBus
 
   // Check if selected bus trip is already completed
-  const busCompleted = selBus
+  // A live-GPS bus (no timetable) can never be judged "completed" by the clock —
+  // its status comes from the tracker, not from an arrival_time it doesn't have.
+  const busCompleted = selBus && hasSchedule(selBus)
     ? nowISTMins() > timeStrToMins(selBus.arrival_time) &&
       selBus.status !== 'breakdown' && selBus.status !== 'delayed'
     : false
 
-  const currentIdx = busCompleted
+  const currentIdx = busIsLiveGPS
+    ? Math.min(Math.max(selBus!.current_stop_index || 1, 1), totalStops)  // trust real GPS/Haversine position
+    : busCompleted
     ? totalStops + 1   // beyond last stop — all stops show as passed, no BUS HERE
     : selBus
     ? calcCurrentStopIndex(
@@ -361,13 +381,14 @@ export default function BusDetail() {
   }
   const statusInfo = statusMap[selBus?.status || 'depot'] || statusMap.depot
 
-  // Determine bus status from IST time (more accurate than DB status)
+  // Determine bus status: from IST time for scheduled buses (more accurate than DB status),
+  // but from the DB status directly for live-GPS buses, which have no schedule to compare against.
   const now = nowISTMins()
   const depMins = selBus ? timeStrToMins(selBus.departure_time) : 0
   const arrMins = selBus ? timeStrToMins(selBus.arrival_time) : 0
-  const isCurrentlyRunning = selBus && depMins <= now && now <= arrMins
-  const hasNotDeparted = selBus && now < depMins
-  const hasCompleted = selBus && now > arrMins
+  const isCurrentlyRunning = busIsLiveGPS ? selBus?.status === 'running' : !!(selBus && depMins <= now && now <= arrMins)
+  const hasNotDeparted = busIsLiveGPS ? selBus?.status === 'depot' : !!(selBus && now < depMins)
+  const hasCompleted = busIsLiveGPS ? false : !!(selBus && now > arrMins)
 
   const R    = 28
   const circ = 2 * Math.PI * R
@@ -393,7 +414,7 @@ export default function BusDetail() {
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{ background: 'var(--light)', color: 'var(--blue)', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
-            🕐 {selBus?.departure_time || '--'} → {selBus?.arrival_time || '--'}
+            {busIsLiveGPS ? '🛰️ Live GPS — no fixed timetable' : `🕐 ${selBus?.departure_time || '--'} → ${selBus?.arrival_time || '--'}`}
           </div>
           <div style={{ background: '#FFF8E1', color: '#9A6700', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>City Bus</div>
           <div style={{ background: '#E8F5E9', color: '#1A7A4A', fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 20 }}>
@@ -420,6 +441,7 @@ export default function BusDetail() {
             {(() => {
               const nowM = nowISTMins()
               const active = buses.filter(b => {
+                if (!hasSchedule(b)) return true
                 const arr = timeStrToMins(b.arrival_time)
                 return nowM <= arr || b.status === 'breakdown' || b.status === 'delayed'
               }).length
@@ -431,11 +453,12 @@ export default function BusDetail() {
           </div>
           <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
             {buses.map(b => {
+              const bLiveGPS   = !hasSchedule(b)
               const bDep = timeStrToMins(b.departure_time)
               const bArr = timeStrToMins(b.arrival_time)
-              const bRunning   = bDep <= now && now <= bArr
-              const bCompleted = now > bArr && b.status !== 'breakdown' && b.status !== 'delayed'
-              const bUpcoming  = bDep > now
+              const bRunning   = bLiveGPS ? b.status === 'running' : bDep <= now && now <= bArr
+              const bCompleted = bLiveGPS ? false : now > bArr && b.status !== 'breakdown' && b.status !== 'delayed'
+              const bUpcoming  = bLiveGPS ? false : bDep > now
               return (
                 <button key={b.id} onClick={() => setSelBus(b)} style={{
                   padding: '5px 12px', borderRadius: 20,
@@ -448,8 +471,8 @@ export default function BusDetail() {
                 }}>
                   {bRunning && <span className="live-dot" style={{ width: 5, height: 5, marginRight: 3 }} />}
                   {bCompleted && <span style={{ marginRight: 3 }}>✓</span>}
-                  {b.registration} · {b.departure_time}
-                  {bCompleted ? ' (done)' : bUpcoming ? '' : ''}
+                  {b.registration} · {bLiveGPS ? '🛰️ GPS' : b.departure_time}
+                  {bCompleted ? ' (done)' : ''}
                 </button>
               )
             })}
@@ -495,8 +518,11 @@ export default function BusDetail() {
                 const isCurrent     = stop.stop_index === currentIdx
                 const isDestination = isLast
 
-                // ── Stop time calculated from IST, not hardcoded ──────────────
-                const stopTime = selBus
+                // ── Stop time calculated from IST for scheduled buses; live-GPS buses
+                //    have no timetable to derive a time from, so show a GPS marker instead ──
+                const stopTime = busIsLiveGPS
+                  ? (isPassed ? '✓ Passed' : isCurrent ? '📍 Bus here now' : '—')
+                  : selBus
                   ? calcStopTime(
                       selBus.departure_time,
                       selBus.arrival_time,
