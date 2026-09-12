@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>GPS Tracker — Universal Route Detection</title>
+<style>
+:root {
+  --blue:#1B3A6B; --teal:#0F6E56; --gold:#F5A623;
+  --green:#1A7A4A; --red:#C0392B; --light:#EBF2FF;
+  --gray:#F4F6FA; --mute:#7A8BA6; --text:#1C2B4A;
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'Segoe UI',Arial,sans-serif;background:var(--gray);min-height:100dvh}
+.wrap{max-width:420px;margin:0 auto;padding-bottom:60px}
+
+.hdr{background:var(--blue);padding:14px 16px 14px;color:white}
+.hdr-top{display:flex;align-items:center;justify-content:space-between}
+.logo{font-size:19px;font-weight:800;letter-spacing:.5px}
+.logo span{color:var(--gold)}
+.rbadge{background:var(--gold);color:var(--blue);font-size:14px;font-weight:800;padding:4px 14px;border-radius:20px}
+.hsub{font-size:11px;opacity:.6;margin-top:4px}
+
+.card{background:white;margin:12px;border-radius:14px;padding:16px;box-shadow:0 2px 16px rgba(13,43,94,.1)}
+.clabel{font-size:11px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px}
+.b-idle{background:#FFF8E1;color:#9A6700}
+.b-live{background:#E8F5E9;color:var(--green)}
+.b-err{background:#FDECEA;color:var(--red)}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:blink 1.5s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+.cgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.cbox{background:var(--gray);border-radius:10px;padding:12px;text-align:center}
+.cnum{font-size:17px;font-weight:700;color:var(--blue);font-variant-numeric:tabular-nums}
+.clbl2{font-size:10px;color:var(--mute);margin-top:2px}
+
+.acc-row{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--mute);margin-bottom:10px}
+.acc-track{flex:1;height:5px;background:#E2E8F0;border-radius:3px;overflow:hidden}
+.acc-fill{height:100%;border-radius:3px;transition:width .4s}
+
+.info-row{font-size:11px;color:var(--mute);margin-top:5px}
+.info-row b{color:var(--text)}
+
+.btn{display:block;width:100%;padding:14px;border:none;border-radius:12px;font-size:16px;font-weight:800;letter-spacing:.5px;cursor:pointer;margin-top:10px;transition:transform .1s}
+.btn:active{transform:scale(.97)}
+.btn-go{background:var(--green);color:white}
+.btn-stop{background:var(--red);color:white}
+.btn-off{background:#E2E8F0;color:var(--mute);cursor:not-allowed}
+
+/* Stop tracker */
+.stop-list{position:relative;padding-left:40px}
+.stop-item{position:relative;display:flex;align-items:flex-start}
+.rail{position:absolute;left:-40px;top:0;width:40px;display:flex;flex-direction:column;align-items:center}
+.sc{width:20px;height:20px;border-radius:50%;border:2.5px solid #D1DCF0;background:white;z-index:2;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .4s}
+.sc-p{background:#E8F5E9;border-color:var(--green)}
+.sc-c{background:var(--blue);border-color:var(--blue);width:24px;height:24px;box-shadow:0 0 0 4px rgba(27,58,107,.18)}
+.sl{width:3px;flex:1;min-height:26px;background:#E2E8F0;transition:background .4s}
+.sl-p{background:var(--green)}
+.sl-c{background:linear-gradient(to bottom,var(--blue),#E2E8F0)}
+.sc-text{padding-bottom:22px;flex:1}
+.sname{font-size:13px;font-weight:500;color:var(--text);line-height:20px}
+.sname-p{color:var(--green)}
+.sname-c{font-weight:700;color:var(--blue);font-size:14px}
+.slm{font-size:10px;color:var(--mute);margin-top:1px}
+.chip{display:inline-block;font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:5px;vertical-align:middle}
+.chip-g{background:#E8F5E9;color:var(--green)}
+.chip-b{background:var(--light);color:var(--blue)}
+.chip-m{background:#F3F4F6;color:var(--mute)}
+
+/* Log */
+.log-box{max-height:180px;overflow-y:auto;font-size:11px}
+.log-box::-webkit-scrollbar{width:3px}
+.log-box::-webkit-scrollbar-thumb{background:#D1DCF0;border-radius:2px}
+.log-entry{padding:4px 0;border-bottom:1px solid #F0F4FA;font-variant-numeric:tabular-nums;color:var(--mute)}
+.log-entry:last-child{border:none}
+.log-ok{color:var(--green)}
+.log-err{color:var(--red)}
+.log-warn{color:#9A6700}
+
+.footer{position:fixed;bottom:0;left:0;right:0;background:var(--blue);color:rgba(255,255,255,.6);font-size:10px;text-align:center;padding:7px}
+
+/* Route/bus confirmation prompts */
+.confirm-box{margin-top:10px;padding:10px 12px;border-radius:10px;display:none}
+.confirm-box.show{display:block}
+.confirm-route{background:#FFF8E1}
+.confirm-bus{background:var(--light)}
+.confirm-lbl{font-size:11px;font-weight:700;margin-bottom:8px}
+.confirm-route .confirm-lbl{color:#9A6700}
+.confirm-bus .confirm-lbl{color:var(--blue)}
+.route-chip-row{display:flex;gap:6px;flex-wrap:wrap}
+.route-chip-btn{padding:7px 14px;border-radius:20px;border:1.5px solid var(--gold);background:white;color:#9A6700;font-size:12px;font-weight:700;cursor:pointer}
+.route-chip-btn:active{transform:scale(.96)}
+.confirm-bus select{width:100%;padding:9px 10px;border-radius:8px;border:1.5px solid #C7D6EE;font-size:13px}
+.detected-row{display:flex;justify-content:space-between;align-items:center;background:var(--gray);border-radius:8px;padding:8px 12px;margin-top:10px}
+.detected-lbl{font-size:10px;color:var(--mute);text-transform:uppercase;letter-spacing:.3px}
+.detected-val{font-size:14px;font-weight:800;color:var(--blue)}
+
+/* Occupancy donut + board/alight controls */
+.occ-row{display:flex;align-items:center;gap:16px}
+.occ-donut{position:relative;width:76px;height:76px;flex-shrink:0}
+.occ-donut svg{width:76px;height:76px;transform:rotate(-90deg)}
+.occ-donut-pct{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:17px;font-weight:800;color:var(--text)}
+.occ-detail{flex:1}
+.occ-count{font-size:14px;font-weight:700;color:var(--text)}
+.occ-sub{font-size:11px;color:var(--mute);margin-top:2px}
+.occ-btns{display:flex;gap:10px;margin-top:14px}
+.occ-btn{flex:1;padding:16px 0;border:none;border-radius:12px;font-size:22px;font-weight:800;cursor:pointer;transition:transform .1s;display:flex;flex-direction:column;align-items:center;gap:2px}
+.occ-btn:active{transform:scale(.95)}
+.occ-btn-minus{background:#FDECEA;color:var(--red)}
+.occ-btn-plus{background:#E8F5E9;color:var(--green)}
+.occ-btn:disabled{background:#F0F1F3;color:#C2C8D2;cursor:not-allowed;transform:none}
+.occ-btn-lbl{font-size:10px;font-weight:700;letter-spacing:.3px}
+
+/* ePass on-board registration form */
+.ff{margin-bottom:11px}
+.ff label{font-size:10px;font-weight:700;color:var(--mute);text-transform:uppercase;letter-spacing:.3px;display:block;margin-bottom:5px}
+.ff input,.ff select{width:100%;padding:10px 12px;border:1.5px solid #E2E8F0;border-radius:8px;font-size:14px;color:var(--text);outline:none;background:white}
+.ff input:focus,.ff select:focus{border-color:var(--blue)}
+.ff-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ep-result{display:none;margin-top:12px;padding:12px 14px;background:#E8F5E9;border:1.5px solid #86EFAC;border-radius:10px;font-size:12px;color:#166534;font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hdr">
+    <div class="hdr-top">
+      <div class="logo">AP <span>TRANSIT</span></div>
+      <div class="rbadge" id="routeBadge">—</div>
+    </div>
+    <div class="hsub">Universal GPS Tracker · Auto Route Detection · Haversine Engine</div>
+  </div>
+
+  <!-- GPS STATUS -->
+  <div class="card">
+    <div class="clabel">
+      GPS Signal
+      <span class="badge b-idle" id="liveBadge">⏳ IDLE</span>
+    </div>
+    <div class="cgrid">
+      <div class="cbox"><div class="cnum" id="latDisp">—</div><div class="clbl2">Latitude</div></div>
+      <div class="cbox"><div class="cnum" id="lonDisp">—</div><div class="clbl2">Longitude</div></div>
+    </div>
+    <div class="acc-row">
+      <span>Accuracy</span>
+      <div class="acc-track"><div class="acc-fill" id="accFill" style="width:0%;background:var(--green)"></div></div>
+      <span id="accTxt">—</span>
+    </div>
+    <div class="info-row">Nearest stop: <b id="nearStop">—</b> &nbsp;·&nbsp; Distance: <b id="nearDist">—</b></div>
+    <div class="info-row">Last Supabase push: <b id="lastPush">Never</b></div>
+    <div class="info-row">Stop index written: <b id="idxWritten">—</b></div>
+
+    <div class="detected-row">
+      <div><div class="detected-lbl">Detected Route</div><div class="detected-val" id="detectedRouteTxt">Not locked</div></div>
+      <div style="text-align:right"><div class="detected-lbl">Tracking Bus</div><div class="detected-val" id="detectedBusTxt">—</div></div>
+    </div>
+
+    <!-- Shown only when the nearest stop is shared by more than one route -->
+    <div class="confirm-box confirm-route" id="routeConfirmBox">
+      <div class="confirm-lbl">⚠ This stop serves more than one route — tap yours</div>
+      <div class="route-chip-row" id="routeConfirmBtns"></div>
+    </div>
+
+    <!-- Shown only when the detected route has more than one active bus -->
+    <div class="confirm-box confirm-bus" id="busConfirmBox">
+      <div class="confirm-lbl">🚌 Multiple buses run this route — select yours</div>
+      <select id="busConfirmSelect" onchange="onBusConfirmed(this.value)"></select>
+    </div>
+
+    <button class="btn btn-off" id="btnMain" disabled onclick="startTracking()">📍 START GPS TRACKING</button>
+  </div>
+
+  <!-- OCCUPANCY & BOARDING -->
+  <div class="card">
+    <div class="clabel">
+      📊 Occupancy &amp; Boarding
+      <span id="occSyncLbl" style="color:var(--mute)">—</span>
+    </div>
+    <div class="occ-row">
+      <div class="occ-donut">
+        <svg viewBox="0 0 76 76">
+          <circle cx="38" cy="38" r="28" fill="none" stroke="#E2E8F0" stroke-width="9"/>
+          <circle cx="38" cy="38" r="28" fill="none" stroke="var(--green)" stroke-width="9"
+            stroke-dasharray="175.9" id="occCircle" stroke-dashoffset="175.9" stroke-linecap="round"
+            style="transition:stroke-dashoffset .4s, stroke .4s"/>
+        </svg>
+        <div class="occ-donut-pct" id="occPctTxt">0%</div>
+      </div>
+      <div class="occ-detail">
+        <div class="occ-count" id="occCountTxt">0 / 52 seated</div>
+        <div class="occ-sub">Writes to <b>buses.seats_occupied</b> instantly</div>
+      </div>
+    </div>
+    <div class="occ-btns">
+      <button class="occ-btn occ-btn-minus" id="minusBtn" onclick="alightPassenger()">
+        <span>−</span><span class="occ-btn-lbl">ALIGHTED</span>
+      </button>
+      <button class="occ-btn occ-btn-plus" id="plusBtn" onclick="boardPassenger()">
+        <span>+</span><span class="occ-btn-lbl">BOARDED</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ON-BOARD EPASS REGISTRATION -->
+  <div class="card">
+    <div class="clabel">🪪 Register ePass — On-board</div>
+    <div class="ff">
+      <label>Passenger Full Name</label>
+      <input type="text" id="epName" placeholder="As per Aadhaar">
+    </div>
+    <div class="ff-grid">
+      <div class="ff">
+        <label>Aadhaar Number</label>
+        <input type="tel" id="epAadhaar" placeholder="12-digit number" maxlength="12">
+      </div>
+      <div class="ff">
+        <label>Mobile Number</label>
+        <input type="tel" id="epMobile" placeholder="10-digit number" maxlength="10">
+      </div>
+    </div>
+    <div class="ff-grid">
+      <div class="ff">
+        <label>Pass Type</label>
+        <select id="epType">
+          <option value="daily">Daily — ₹50</option>
+          <option value="monthly" selected>Monthly — ₹350</option>
+          <option value="student">Student — ₹150</option>
+          <option value="senior">Senior Citizen — ₹175</option>
+        </select>
+      </div>
+      <div class="ff">
+        <label>Payment Method</label>
+        <select id="epPayment">
+          <option value="Cash">Cash (on-board)</option>
+          <option value="UPI One-time">UPI One-time</option>
+          <option value="UPI Autopay">UPI Autopay</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn btn-go" id="epSubmitBtn" onclick="submitEPass()">✓ REGISTER &amp; BOARD PASSENGER</button>
+    <div class="ep-result" id="epResult"><span id="epResultTxt"></span></div>
+  </div>
+
+  <!-- STOP TRACKER -->
+  <div class="card">
+    <div class="clabel">
+      🚌 <span id="trackerTitle">Live Stop Tracker</span>
+      <span id="stopCountLbl" style="color:var(--blue)">Waiting for GPS...</span>
+    </div>
+    <div class="stop-list" id="stopList">
+      <div style="text-align:center;padding:20px;color:var(--mute);font-size:13px">Move near any route's stop to auto-detect it here.</div>
+    </div>
+  </div>
+
+  <!-- EVENT LOG -->
+  <div class="card">
+    <div class="clabel">📋 Event Log <span id="pushCountLbl" style="color:var(--blue)">0 pushes</span></div>
+    <div class="log-box" id="logBox">
+      <div class="log-entry">Initialising universal GPS tracker...</div>
+    </div>
+  </div>
+
+</div>
+<div class="footer">APCityPrayaanam GPS Tracker · Universal Route Detection · BVASSR KRISHNA · 2026</div>
+
+<script>
+// ══════════════════════════════════════════════
+// ⚠ CONFIGURATION — edit these if needed
+// ══════════════════════════════════════════════
+const SB_URL   = 'https://cestbejutcylclapdqqy.supabase.co'
+const SB_KEY   = 'sb_publishable_rwLvAUcUG9TgLRXm4f6AuQ_5a0XBJ0E'
+const PROX_M   = 300        // Haversine threshold in metres — "at this stop" radius
+const PUSH_MS  = 5000       // push every 5 seconds
+
+// ── Supabase helpers ───────────────────────────
+const SB_HDR = {
+  'apikey': SB_KEY,
+  'Authorization': `Bearer ${SB_KEY}`,
+  'Content-Type': 'application/json'
+}
+
+async function sbGet(table, qs) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${qs}`, { headers: SB_HDR })
+  if (!r.ok) throw new Error(`GET /${table} → HTTP ${r.status}: ${await r.text()}`)
+  return r.json()
+}
+
+async function sbPatch(table, qs, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${qs}`, {
+    method: 'PATCH',
+    headers: { ...SB_HDR, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(body)
+  })
+  if (!r.ok) throw new Error(`PATCH /${table} → HTTP ${r.status}: ${await r.text()}`)
+}
+
+async function sbPost(table, body) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}`, {
+    method: 'POST',
+    headers: { ...SB_HDR, 'Prefer': 'return=minimal' },
+    body: JSON.stringify(body)
+  })
+  if (!r.ok) throw new Error(`POST /${table} → HTTP ${r.status}: ${await r.text()}`)
+}
+
+// ══════════════════════════════════════════════
+// HAVERSINE FORMULA
+// Returns distance in METRES between two GPS points
+// lat1/lon1 = bus (phone GPS)
+// lat2/lon2 = bus stop (from Supabase bus_stops)
+// ══════════════════════════════════════════════
+function haversineM(lat1, lon1, lat2, lon2) {
+  const R    = 6371000                        // Earth radius metres
+  const toR  = d => d * Math.PI / 180        // degrees → radians
+  const φ1   = toR(lat1),  φ2 = toR(lat2)
+  const Δφ   = toR(lat2 - lat1)
+  const Δλ   = toR(lon2 - lon1)
+  const a    = Math.sin(Δφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2
+  const c    = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return R * c                                // metres
+}
+
+// ── State ──────────────────────────────────────
+let allStops    = []       // EVERY stop, EVERY route — {route_no,stop_index,stop_name,landmark,latitude,longitude}
+let allBuses    = []       // EVERY bus, EVERY route  — {registration,route_no,current_stop_index,status,seats_occupied}
+let routeCap    = {}       // route_no -> capacity
+let detectedRoute = null   // currently locked-on route_no, or null if not yet detected
+let detectedStops = []     // allStops filtered to detectedRoute, sorted
+let busReg     = null      // registration of the bus currently being tracked
+let watchId    = null
+let pushTimer  = null
+let pushCount  = 0
+let curLat     = null
+let curLon     = null
+let curStopIdx = 1
+let tracking   = false
+let capacity   = 52
+let occupied   = 0
+let awaitingBusPick = false   // true while a multi-bus confirm dropdown is showing
+
+// ── Occupancy donut + board/alight ─────────────
+const OCC_CIRC = 175.9   // 2·π·28, matches the SVG r=28 above
+
+function updateOccupancyUI() {
+  const pct = capacity > 0 ? Math.min(100, Math.round((occupied / capacity) * 100)) : 0
+  const offset = OCC_CIRC - (pct / 100) * OCC_CIRC
+  const circle = document.getElementById('occCircle')
+  circle.setAttribute('stroke-dashoffset', offset)
+  circle.setAttribute('stroke', pct >= 85 ? 'var(--red)' : pct >= 60 ? 'var(--gold)' : 'var(--green)')
+  document.getElementById('occPctTxt').textContent = pct + '%'
+  document.getElementById('occCountTxt').textContent = `${occupied} / ${capacity} seated`
+  document.getElementById('minusBtn').disabled = occupied <= 0
+  document.getElementById('plusBtn').disabled  = occupied >= capacity
+}
+
+async function pushOccupancy() {
+  if (!busReg) { log('No bus locked yet — cannot sync occupancy', 'err'); return }
+  const lbl = document.getElementById('occSyncLbl')
+  lbl.textContent = 'Syncing…'
+  try {
+    await sbPatch('buses', `registration=eq.${encodeURIComponent(busReg)}`,
+      { seats_occupied: occupied })
+    lbl.textContent = 'Synced ✓'
+    log(`Occupancy synced → ${occupied}/${capacity}`, 'ok')
+  } catch (e) {
+    lbl.textContent = 'Sync failed'
+    log('Occupancy sync failed: ' + e.message, 'err')
+  }
+}
+
+function boardPassenger(n = 1) {
+  occupied = Math.min(capacity, occupied + n)
+  updateOccupancyUI()
+  pushOccupancy()
+}
+
+function alightPassenger(n = 1) {
+  occupied = Math.max(0, occupied - n)
+  updateOccupancyUI()
+  pushOccupancy()
+}
+
+// ── On-board ePass registration ────────────────
+function genPassId() {
+  const year = new Date().getFullYear()
+  const num  = Math.floor(40000 + Math.random() * 9999)
+  return `APTC-${year}-VSP-${num.toString().padStart(7, '0')}`
+}
+
+async function submitEPass() {
+  const name     = document.getElementById('epName').value.trim()
+  const aadhaar  = document.getElementById('epAadhaar').value.trim()
+  const mobile   = document.getElementById('epMobile').value.trim()
+  const passType = document.getElementById('epType').value
+  const payment  = document.getElementById('epPayment').value
+  const btn      = document.getElementById('epSubmitBtn')
+
+  if (!name)                       { alert('Enter the passenger\'s full name'); return }
+  if (!/^\d{12}$/.test(aadhaar))   { alert('Enter a valid 12-digit Aadhaar number'); return }
+  if (!/^\d{10}$/.test(mobile))    { alert('Enter a valid 10-digit mobile number'); return }
+  if (!detectedRoute)              { alert('No route detected yet — move near a stop first so the tracker knows which route this pass belongs to'); return }
+
+  const passId     = genPassId()
+  const amount     = { monthly: 350, student: 150, senior: 175, daily: 50 }[passType] || 350
+  const validUntil = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+
+  btn.disabled = true
+  btn.textContent = 'Registering…'
+  try {
+    await sbPost('epasses', {
+      pass_id:        passId,
+      holder_name:    name,
+      aadhaar_last4:  aadhaar.slice(-4),
+      mobile:         mobile,
+      pass_type:      passType,
+      route:          detectedRoute,
+      payment_method: payment,
+      amount:         amount,
+      status:         'active',   // conductor-verified in person — no backend approval needed
+      valid_from:     new Date().toISOString().split('T')[0],
+      valid_until:    validUntil,
+      auto_renewal:   payment === 'UPI Autopay',
+    })
+    log(`✅ ePass registered: ${passId} — ${name} (${passType})`, 'ok')
+    document.getElementById('epResult').style.display = 'block'
+    document.getElementById('epResultTxt').textContent = `Pass ${passId} issued to ${name} — boarded ✓`
+    document.getElementById('epName').value = ''
+    document.getElementById('epAadhaar').value = ''
+    document.getElementById('epMobile').value = ''
+    // Registering a pass IS a boarding event — count it in occupancy
+    boardPassenger(1)
+  } catch (e) {
+    log('ePass registration failed: ' + e.message, 'err')
+    alert('Registration failed: ' + e.message)
+  } finally {
+    btn.disabled = false
+    btn.textContent = '✓ REGISTER & BOARD PASSENGER'
+  }
+}
+
+// ── Logging ────────────────────────────────────
+function log(msg, type='info') {
+  const box = document.getElementById('logBox')
+  const el  = document.createElement('div')
+  el.className = `log-entry log-${type}`
+  const t = new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:false})
+  el.textContent = `[${t}] ${msg}`
+  box.insertBefore(el, box.firstChild)
+  while (box.children.length > 25) box.removeChild(box.lastChild)
+}
+
+// ── Render stop tracker (for whichever route is currently detected) ────
+function renderStops(activeIdx, dists={}) {
+  const list = document.getElementById('stopList')
+  if (!detectedRoute || !detectedStops.length) {
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--mute);font-size:13px">Move near any route\'s stop to auto-detect it here.</div>'
+    document.getElementById('stopCountLbl').textContent = 'Waiting for GPS...'
+    document.getElementById('trackerTitle').textContent = 'Live Stop Tracker'
+    return
+  }
+  document.getElementById('trackerTitle').textContent = `Route ${detectedRoute} — Stop Tracker`
+  document.getElementById('stopCountLbl').textContent = detectedStops.length + ' stops'
+  list.innerHTML = detectedStops.map((s, i) => {
+    const isLast = i === detectedStops.length - 1
+    const passed  = s.stop_index < activeIdx
+    const current = s.stop_index === activeIdx
+    const cClass  = passed ? 'sc sc-p' : current ? 'sc sc-c' : 'sc'
+    const lClass  = passed ? 'sl sl-p' : current ? 'sl sl-c' : 'sl'
+    const nClass  = passed ? 'sname sname-p' : current ? 'sname sname-c' : 'sname'
+    const dot     = passed
+      ? '<div style="width:8px;height:8px;border-radius:50%;background:var(--green)"></div>'
+      : current
+        ? '<div style="width:8px;height:8px;border-radius:50%;background:white"></div>'
+        : ''
+    const d = dists[s.stop_index]
+    let chip = ''
+    if (d !== undefined) {
+      const label = d < 1000 ? d+'m' : (d/1000).toFixed(1)+'km'
+      chip = current
+        ? `<span class="chip chip-b">📍 ${label}</span>`
+        : d <= PROX_M
+          ? `<span class="chip chip-g">✓ ${label}</span>`
+          : `<span class="chip chip-m">${label}</span>`
+    }
+    return `<div class="stop-item">
+      <div class="rail">
+        <div class="${cClass}">${dot}</div>
+        ${!isLast ? `<div class="${lClass}"></div>` : ''}
+      </div>
+      <div class="sc-text">
+        <div class="${nClass}">${s.stop_name}${chip}</div>
+        <div class="slm">${s.landmark||''}</div>
+      </div>
+    </div>`
+  }).join('')
+}
+
+// ── Push GPS + Haversine result to Supabase ────
+// ── Route/bus locking ───────────────────────────
+// Called once we've confidently identified which route the phone is on
+// (either because exactly one route had a stop within range, or the
+// driver tapped a confirm chip to resolve a shared-stop ambiguity).
+async function lockRoute(routeNo) {
+  detectedRoute  = routeNo
+  detectedStops  = allStops.filter(s => s.route_no === routeNo).sort((a,b) => a.stop_index - b.stop_index)
+  capacity       = routeCap[routeNo] || 52
+  document.getElementById('routeBadge').textContent    = routeNo
+  document.getElementById('detectedRouteTxt').textContent = routeNo
+  document.getElementById('routeConfirmBox').classList.remove('show')
+  log(`🔄 Route locked: ${routeNo}`, 'ok')
+
+  const candidateBuses = allBuses.filter(b => b.route_no === routeNo)
+  if (candidateBuses.length === 0) {
+    busReg = null
+    document.getElementById('detectedBusTxt').textContent = 'No bus row!'
+    log(`⚠ No bus row exists for route ${routeNo} in buses table — add one in Supabase`, 'err')
+  } else if (candidateBuses.length === 1) {
+    lockBus(candidateBuses[0])
+  } else {
+    showBusConfirm(candidateBuses)
+  }
+  renderStops(curStopIdx)
+}
+
+function lockBus(bus) {
+  busReg   = bus.registration
+  occupied = bus.seats_occupied || 0
+  document.getElementById('detectedBusTxt').textContent = busReg
+  document.getElementById('busConfirmBox').classList.remove('show')
+  awaitingBusPick = false
+  updateOccupancyUI()
+  log(`🚌 Tracking bus: ${busReg}`, 'ok')
+}
+
+function showRouteConfirm(candidateRoutes, withinRange) {
+  const box = document.getElementById('routeConfirmBox')
+  const btnRow = document.getElementById('routeConfirmBtns')
+  btnRow.innerHTML = candidateRoutes.map(r => {
+    const stopName = withinRange.find(s => s.route_no === r).stop_name
+    return `<button class="route-chip-btn" onclick="onRouteConfirmed('${r}')">${r} <span style="opacity:.7;font-weight:500">(${stopName})</span></button>`
+  }).join('')
+  box.classList.add('show')
+}
+
+function onRouteConfirmed(routeNo) {
+  lockRoute(routeNo)
+}
+
+function showBusConfirm(candidateBuses) {
+  awaitingBusPick = true
+  busReg = null
+  document.getElementById('detectedBusTxt').textContent = 'Select below ↓'
+  const box = document.getElementById('busConfirmBox')
+  const sel = document.getElementById('busConfirmSelect')
+  sel.innerHTML = '<option value="">— choose your bus —</option>' +
+    candidateBuses.map(b => `<option value="${b.registration}">${b.registration} (${b.status})</option>`).join('')
+  box.classList.add('show')
+}
+
+function onBusConfirmed(registration) {
+  if (!registration) return
+  const bus = allBuses.find(b => b.registration === registration)
+  if (bus) lockBus(bus)
+}
+
+// ── Push GPS + Haversine result to Supabase ────
+async function pushGPS() {
+  if (curLat === null) return
+
+  // Distance from current position to EVERY stop, across ALL routes
+  const withinRange = []
+  let globalNearest = null, globalNearestDist = Infinity
+  for (const s of allStops) {
+    const d = Math.round(haversineM(curLat, curLon, s.latitude, s.longitude))
+    if (d < globalNearestDist) { globalNearestDist = d; globalNearest = s }
+    if (d <= PROX_M) withinRange.push({ ...s, dist: d })
+  }
+
+  document.getElementById('nearStop').textContent = globalNearest ? globalNearest.stop_name : '—'
+  document.getElementById('nearDist').textContent = globalNearest ? `${globalNearestDist}m` : '—'
+
+  const candidateRoutes = [...new Set(withinRange.map(s => s.route_no))]
+  const dists = {}
+  let stopHere = null
+
+  if (candidateRoutes.length === 0) {
+    // Not within range of any known stop on any route — keep whatever
+    // route/bus was already locked (if any) and just push raw coordinates.
+    log(`Not within ${PROX_M}m of any stop. Nearest: ${globalNearest?.stop_name} on ${globalNearest?.route_no} (${globalNearestDist}m)`, 'warn')
+  } else if (candidateRoutes.length === 1 || (detectedRoute && candidateRoutes.includes(detectedRoute))) {
+    // Unambiguous, OR the already-locked route is still a valid candidate here
+    const routeNo = (detectedRoute && candidateRoutes.includes(detectedRoute)) ? detectedRoute : candidateRoutes[0]
+    if (routeNo !== detectedRoute) await lockRoute(routeNo)
+    stopHere = withinRange.find(s => s.route_no === routeNo)
+    curStopIdx = stopHere.stop_index
+    detectedStops.forEach(s => {
+      const hit = withinRange.find(w => w.route_no === routeNo && w.stop_index === s.stop_index)
+      dists[s.stop_index] = hit ? hit.dist : Math.round(haversineM(curLat, curLon, s.latitude, s.longitude))
+    })
+    document.getElementById('idxWritten').textContent = curStopIdx
+  } else {
+    // Genuinely ambiguous — this exact stop is shared by multiple routes
+    // and we have no prior lock to break the tie. Ask the driver.
+    showRouteConfirm(candidateRoutes, withinRange)
+    log(`⚠ Multiple routes share this stop: ${candidateRoutes.join(', ')} — confirm below`, 'warn')
+  }
+
+  // Write GPS position (always) + stop index (only when confidently at a stop)
+  if (!busReg) {
+    if (!awaitingBusPick && !detectedRoute) log('Waiting for route detection before pushing to Supabase', 'warn')
+    return
+  }
+  try {
+    const patch = {
+      gps_lat:         curLat,
+      gps_lon:         curLon,
+      status:          'running',
+      last_gps_update: new Date().toISOString(),
+    }
+    if (stopHere) patch.current_stop_index = curStopIdx
+    await sbPatch('buses', `registration=eq.${encodeURIComponent(busReg)}`, patch)
+    pushCount++
+    document.getElementById('pushCountLbl').textContent = pushCount + ' pushes'
+    document.getElementById('lastPush').textContent =
+      new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour12:true})
+    log(`✅ Pushed → route=${detectedRoute}, bus=${busReg}, lat=${curLat.toFixed(6)}, lon=${curLon.toFixed(6)}${stopHere ? ', stop='+curStopIdx : ''}`, 'ok')
+  } catch(e) {
+    log(`PATCH failed: ${e.message}`, 'err')
+  }
+
+  if (detectedRoute) renderStops(curStopIdx, dists)
+}
+
+// ── GPS callbacks ──────────────────────────────
+function onPos(pos) {
+  curLat = pos.coords.latitude
+  curLon = pos.coords.longitude
+  const acc = Math.round(pos.coords.accuracy)
+  document.getElementById('latDisp').textContent = curLat.toFixed(6)
+  document.getElementById('lonDisp').textContent = curLon.toFixed(6)
+  const pct   = Math.max(0, Math.min(100, 100 - (acc/50)*100))
+  const color = acc < 20 ? 'var(--green)' : acc < 50 ? 'var(--gold)' : 'var(--red)'
+  document.getElementById('accFill').style.width      = pct + '%'
+  document.getElementById('accFill').style.background = color
+  document.getElementById('accTxt').textContent = `±${acc}m`
+  const badge = document.getElementById('liveBadge')
+  badge.className = 'badge b-live'
+  badge.innerHTML = '<div class="live-dot"></div> LIVE GPS'
+}
+
+function onPosErr(e) {
+  const msgs = {1:'Location DENIED — tap the lock icon in browser address bar and Allow',
+                2:'Position unavailable — move outdoors',3:'GPS timeout — retrying'}
+  log(msgs[e.code]||'GPS error','err')
+  const badge = document.getElementById('liveBadge')
+  badge.className = 'badge b-err'
+  badge.innerHTML = '❌ NO GPS'
+}
+
+// ── Start / Stop ───────────────────────────────
+function startTracking() {
+  if (tracking) return
+  if (!navigator.geolocation) { log('Geolocation not supported','err'); return }
+  tracking = true
+  log('GPS watch started','ok')
+  watchId   = navigator.geolocation.watchPosition(onPos, onPosErr,
+                {enableHighAccuracy:true, timeout:10000, maximumAge:0})
+  pushTimer = setInterval(pushGPS, PUSH_MS)
+  const btn = document.getElementById('btnMain')
+  btn.className = 'btn btn-stop'
+  btn.textContent = '⏹ STOP TRACKING'
+  btn.onclick = stopTracking
+  log(`Pushing every ${PUSH_MS/1000}s · Haversine threshold ${PROX_M}m`,'ok')
+}
+
+function stopTracking() {
+  if (!tracking) return
+  tracking = false
+  if (watchId  !== null) { navigator.geolocation.clearWatch(watchId); watchId = null }
+  if (pushTimer)          { clearInterval(pushTimer); pushTimer = null }
+  const badge = document.getElementById('liveBadge')
+  badge.className = 'badge b-idle'
+  badge.innerHTML = '⏸ STOPPED'
+  const btn = document.getElementById('btnMain')
+  btn.className = 'btn btn-go'
+  btn.textContent = '📍 START GPS TRACKING'
+  btn.onclick = startTracking
+  log('Tracking stopped','warn')
+  if (busReg) sbPatch('buses',
+    `registration=eq.${encodeURIComponent(busReg)}`,
+    {status:'depot',current_stop_index:1}
+  ).catch(e => log('Could not set depot: '+e.message,'err'))
+}
+
+// ── Boot ───────────────────────────────────────
+async function boot() {
+  log('Connecting to Supabase...')
+
+  // 1 — load EVERY stop, across EVERY route (needed so GPS can be matched
+  //     against any route, not just one hardcoded one)
+  try {
+    allStops = await sbGet('bus_stops',
+      `order=route_no.asc,stop_index.asc&select=route_no,stop_index,stop_name,landmark,latitude,longitude`)
+    if (allStops.length === 0) {
+      log('No stops found in bus_stops — add rows in Supabase', 'err')
+    } else {
+      const routeCount = new Set(allStops.map(s => s.route_no)).size
+      log(`✅ Loaded ${allStops.length} stops across ${routeCount} routes`, 'ok')
+    }
+  } catch(e) {
+    log('Stops fetch failed: ' + e.message, 'err')
+    if (e.message.includes('latitude') || e.message.includes('longitude')) {
+      log('⚠ bus_stops may be missing latitude/longitude columns — add them in Supabase Table Editor', 'err')
+    }
+  }
+
+  // 2 — load EVERY bus, across EVERY route (so whichever route gets
+  //     detected, its buses are already known — no extra round-trip)
+  try {
+    allBuses = await sbGet('buses',
+      `select=registration,route_no,current_stop_index,status,seats_occupied`)
+    if (allBuses.length === 0) {
+      log('No buses found in buses table — add at least one row in Supabase', 'err')
+    } else {
+      log(`✅ Loaded ${allBuses.length} buses`, 'ok')
+    }
+  } catch(e) {
+    log('Bus fetch failed: ' + e.message, 'err')
+    if (e.message.includes('gps_lat') || e.message.includes('gps_lon')) {
+      log('⚠ buses table missing gps_lat/gps_lon columns — add them via Supabase ALTER TABLE', 'err')
+    }
+  }
+
+  // 3 — load capacity for every route (used once a route auto-locks)
+  try {
+    const routeRows = await sbGet('routes', `select=route_no,capacity`)
+    routeRows.forEach(r => { routeCap[r.route_no] = r.capacity })
+  } catch (e) {
+    log('Route capacity fetch failed, defaulting to 52 everywhere: ' + e.message, 'warn')
+  }
+
+  renderStops(1)   // shows "move near a stop" placeholder — nothing detected yet
+  updateOccupancyUI()
+
+  // 4 — enable button once reference data is loaded. Route/bus detection
+  //     itself happens live once GPS starts flowing — not required here.
+  const btn = document.getElementById('btnMain')
+  if (allStops.length > 0 && allBuses.length > 0) {
+    btn.disabled = false
+    btn.className = 'btn btn-go'
+    log('✅ Ready — tap START GPS TRACKING, then move near any route\'s stop', 'ok')
+  } else {
+    log('❌ Cannot start — fix the errors above first', 'err')
+  }
+}
+
+window.addEventListener('load', boot)
+</script>
+</body>
+</html>
