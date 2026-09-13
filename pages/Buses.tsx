@@ -15,6 +15,7 @@ interface BusRow {
   arrival_time: string
   driver_name: string
   delay_mins: number
+  last_gps_update: string
 }
 
 interface RouteGroup {
@@ -80,6 +81,28 @@ function timeToMins(t: string): number {
 // two display modes: "simulated by clock" vs "live GPS, trust the DB".
 function hasSchedule(bus: BusRow): boolean {
   return !!bus.departure_time && !!bus.arrival_time
+}
+
+// Live GPS bus, no timetable — 5+ minutes since its last GPS push means the
+// occupancy/position figures shown could be stale (signal drop, tracker
+// closed, etc.). Only meaningful for buses with no schedule; a scheduled
+// bus's occupancy comes from ePoS/time-of-day estimates, not a GPS feed.
+const STALE_THRESHOLD_MINS = 5
+function gpsAgeMins(bus: BusRow): number | null {
+  if (hasSchedule(bus) || !bus.last_gps_update) return null
+  return Math.floor((Date.now() - new Date(bus.last_gps_update).getTime()) / 60000)
+}
+function isStaleGPS(bus: BusRow): boolean {
+  const age = gpsAgeMins(bus)
+  return age !== null && age >= STALE_THRESHOLD_MINS
+}
+function staleLabel(bus: BusRow): string {
+  const age = gpsAgeMins(bus)
+  if (age === null) return ''
+  if (age < 1) return 'just now'
+  if (age === 1) return '1 min ago'
+  if (age < 60) return `${age} min ago`
+  return `${Math.floor(age / 60)}h ${age % 60}m ago`
 }
 
 // Show bus if: mid-journey, departing within window, delayed, breakdown
@@ -223,7 +246,7 @@ export default function Buses() {
       const routeNos = matchedRoutes.map(r => r.route_no)
       const { data: busData } = await supabase
         .from('buses')
-        .select('id,registration,route_no,status,current_stop_index,seats_occupied,departure_time,arrival_time,driver_name,delay_mins')
+        .select('id,registration,route_no,status,current_stop_index,seats_occupied,departure_time,arrival_time,driver_name,delay_mins,last_gps_update')
         .in('route_no', routeNos)
         .order('departure_time', { ascending: true })
 
@@ -466,14 +489,21 @@ export default function Buses() {
 
               <div style={{ padding: '8px 14px 10px', background: 'var(--gray)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 10, color: 'var(--mute)', marginBottom: 3, textTransform: 'uppercase' as const, letterSpacing: 0.3 }}>Occupancy</div>
+                  <div style={{ fontSize: 10, color: 'var(--mute)', marginBottom: 3, textTransform: 'uppercase' as const, letterSpacing: 0.3, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    Occupancy
+                    {primaryBus && isStaleGPS(primaryBus) && (
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 20, background: '#FFF3E0', color: '#9A6700' }}>⚠ STALE</span>
+                    )}
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <div className="occ-bar-track" style={{ width: 90 }}>
-                      <div className="occ-bar-fill" style={{ width: `${occPct}%`, background: occColor(occPct) }} />
+                      <div className="occ-bar-fill" style={{ width: `${occPct}%`, background: primaryBus && isStaleGPS(primaryBus) ? '#C2C8D2' : occColor(occPct) }} />
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: occColor(occPct) }}>{occPct}%</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: primaryBus && isStaleGPS(primaryBus) ? '#9A6700' : occColor(occPct) }}>{occPct}%</span>
                   </div>
-                  <div style={{ fontSize: 10, color: occColor(occPct), fontWeight: 600, marginTop: 2 }}>{occLabel(occPct)}</div>
+                  <div style={{ fontSize: 10, color: primaryBus && isStaleGPS(primaryBus) ? '#9A6700' : occColor(occPct), fontWeight: 600, marginTop: 2 }}>
+                    {primaryBus && isStaleGPS(primaryBus) ? `Last updated ${staleLabel(primaryBus)}` : occLabel(occPct)}
+                  </div>
                 </div>
                 {primaryBus && (
                   <div style={{ textAlign: 'center', marginLeft: 10 }}>
@@ -496,15 +526,18 @@ export default function Buses() {
 
                 {group.buses.slice(0, isExpanded ? group.buses.length : 3).map((bus, idx) => {
                   const bPct = Math.min(100, Math.round((bus.seats_occupied / group.capacity) * 100))
+                  const bStale = isStaleGPS(bus)
                   return (
                     <div key={bus.id} style={{ padding: '7px 14px', background: (() => { if (!hasSchedule(bus)) return idx%2===0?'white':'var(--gray)'; const n=nowISTMins(),a=timeToMins(bus.arrival_time); return n>a&&bus.status!=='breakdown'&&bus.status!=='delayed' ? '#F8F8F8' : idx%2===0?'white':'var(--gray)' })(), display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px solid #F0F4FA', opacity: (() => { if (!hasSchedule(bus)) return 1; const n=nowISTMins(),a=timeToMins(bus.arrival_time); return n>a&&bus.status!=='breakdown'&&bus.status!=='delayed' ? 0.45 : 1 })() }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', minWidth: 100 }}>{bus.registration}</div>
-                      <div style={{ fontSize: 11, color: 'var(--mute)', flex: 1 }}>{hasSchedule(bus) ? `🕐 ${bus.departure_time}` : '🛰️ Live GPS'}</div>
+                      <div style={{ fontSize: 11, color: bStale ? '#9A6700' : 'var(--mute)', fontWeight: bStale ? 600 : 400, flex: 1 }}>
+                        {hasSchedule(bus) ? `🕐 ${bus.departure_time}` : bStale ? `⚠ Stale · ${staleLabel(bus)}` : '🛰️ Live GPS'}
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                         <div className="occ-bar-track" style={{ width: 40 }}>
-                          <div className="occ-bar-fill" style={{ width: `${bPct}%`, background: occColor(bPct) }} />
+                          <div className="occ-bar-fill" style={{ width: `${bPct}%`, background: bStale ? '#C2C8D2' : occColor(bPct) }} />
                         </div>
-                        <span style={{ fontSize: 10, color: occColor(bPct), fontWeight: 700 }}>{bPct}%</span>
+                        <span style={{ fontSize: 10, color: bStale ? '#9A6700' : occColor(bPct), fontWeight: 700 }}>{bPct}%</span>
                       </div>
                       <div style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 20, background: STATUS_BG[bus.status] || '#F3F4F6', color: STATUS_COLORS[bus.status] || 'var(--mute)', textTransform: 'uppercase' as const, display: 'flex', alignItems: 'center', gap: 3 }}>
                         {bus.status === 'running' && <span className="live-dot" style={{ width: 5, height: 5 }} />}
