@@ -3,43 +3,115 @@ import type { CSSProperties, Dispatch, SetStateAction } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
+import QRLib from 'qrcode'
 
-// ── QR code generator (pure SVG, no library needed) ───────────────────────────
+// ── QR code ──────────────────────────────────────────────────────────────────
+// This was previously a decorative pattern derived from a string hash — it
+// looked like a QR code and no scanner on earth could read it. It now encodes
+// a real payload: "<pass_id>|<rotating 6-digit code>".
 function QRCode({ value, size = 120 }: { value: string; size?: number }) {
-  const hash = (s: string) => s.split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0)
-  const h = Math.abs(hash(value))
-  const cells = 21
-  const cellSize = size / cells
-  const bits: boolean[][] = Array.from({ length: cells }, (_, r) =>
-    Array.from({ length: cells }, (_, c) => {
-      const inCorner = (r < 7 && c < 7) || (r < 7 && c >= cells - 7) || (r >= cells - 7 && c < 7)
-      if (inCorner) {
-        const br = r < 7 ? r : r - (cells - 7)
-        const bc = c < 7 ? c : c - (cells - 7)
-        if (br === 0 || br === 6 || bc === 0 || bc === 6) return true
-        if (br >= 2 && br <= 4 && bc >= 2 && bc <= 4) return true
-        return false
-      }
-      return ((h ^ (r * 31 + c * 17 + r * c)) & 1) === 1
-    })
-  )
+  const [svg, setSvg] = useState('')
+  useEffect(() => {
+    let alive = true
+    QRLib.toString(value, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' })
+      .then(out => { if (alive) setSvg(out) })
+      .catch(() => { if (alive) setSvg('') })
+    return () => { alive = false }
+  }, [value])
+
+  if (!svg) return <div style={{ width: size, height: size, background: '#EDF1F8', borderRadius: 4 }} />
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: 'block' }}>
-      <rect width={size} height={size} fill="white" />
-      {bits.map((row, r) =>
-        row.map((on, c) =>
-          on ? <rect key={`${r}-${c}`} x={c * cellSize} y={r * cellSize} width={cellSize} height={cellSize} fill="#0D1B2A" /> : null
-        )
-      )}
-    </svg>
+    <div
+      style={{ width: size, height: size, lineHeight: 0 }}
+      dangerouslySetInnerHTML={{
+        __html: svg.replace('<svg', `<svg width="${size}" height="${size}"`),
+      }}
+    />
   )
 }
 
+// ── Rotating code (TOTP) ─────────────────────────────────────────────────────
+// Mirrors totp_code() in the database exactly: HMAC-SHA256 over the 30-second
+// step, first 8 bytes big-endian, AND 0x7FFFFFFF, mod 1e6. A screenshot of the
+// card is worthless roughly half a minute after it is taken.
+function useRotatingCode(secret: string | null | undefined) {
+  const [code, setCode] = useState('')
+  const [remaining, setRemaining] = useState(30)
+  const [unsupported, setUnsupported] = useState(false)
+
+  useEffect(() => {
+    if (!secret) { setCode(''); return }
+    if (!globalThis.crypto?.subtle) { setUnsupported(true); return }
+    let alive = true
+    let key: CryptoKey | null = null
+
+    async function tick() {
+      try {
+        if (!key) {
+          key = await crypto.subtle.importKey(
+            'raw', new TextEncoder().encode(secret!),
+            { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+        }
+        const nowSec = Math.floor(Date.now() / 1000)
+        const step = BigInt(Math.floor(nowSec / 30))
+        const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(step.toString()))
+        const hex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
+        const v = (BigInt('0x' + hex.slice(0, 16)) & 0x7FFFFFFFn) % 1000000n
+        if (!alive) return
+        setCode(v.toString().padStart(6, '0'))
+        setRemaining(30 - (nowSec % 30))
+      } catch { if (alive) setUnsupported(true) }
+    }
+
+    tick()
+    const i = setInterval(tick, 1000)
+    return () => { alive = false; clearInterval(i) }
+  }, [secret])
+
+  return { code, remaining, unsupported }
+}
+
+// ── Pass ID generator ─
 // ── Pass ID generator ──────────────────────────────────────────────────────────
+// The previous generator drew from 40000..49999 — about ten thousand values per
+// year, enumerable in minutes with the public anon key. This draws 40 bits from
+// the CSPRNG and renders them in Crockford base32 (no I, L, O or U, so it can be
+// read aloud and typed without ambiguity).
+const B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 function genPassId() {
-  const year = new Date().getFullYear()
-  const num = Math.floor(40000 + Math.random() * 9999)
-  return `APTC-${year}-VSP-${num.toString().padStart(7, '0')}`
+  const yy = String(new Date().getFullYear()).slice(-2)
+  const bytes = new Uint8Array(5)
+  crypto.getRandomValues(bytes)
+  let n = 0n
+  for (const b of bytes) n = (n << 8n) | BigInt(b)
+  let out = ''
+  for (let i = 0; i < 8; i++) { out = B32[Number(n & 31n)] + out; n >>= 5n }
+  return `APTC-${yy}-VSP-${out}`
+}
+
+// ── Holder credentials (pass_id + access_token) ──────────────────────────────
+// Anon can no longer SELECT from epasses. The holder reads their own pass with
+// get_my_epass(pass_id, token); the token lives only in this browser.
+const CRED_KEY = 'apcp.epass.cred'
+type Cred = { passId: string; token: string }
+
+function loadCred(): Cred | null {
+  try {
+    const raw = localStorage.getItem(CRED_KEY)
+    return raw ? JSON.parse(raw) as Cred : null
+  } catch { return null }
+}
+function saveCred(c: Cred) {
+  try { localStorage.setItem(CRED_KEY, JSON.stringify(c)) } catch { /* private mode */ }
+}
+
+async function fetchMyPass(cred: Cred | null) {
+  if (!cred) return null
+  const { data, error } = await supabase.rpc('get_my_epass', {
+    p_pass_id: cred.passId, p_token: cred.token,
+  })
+  if (error || !data || !data.length) return null
+  return data[0]
 }
 
 // ── Image handling ────────────────────────────────────────────────────────────
@@ -160,6 +232,7 @@ function fmtDate(d: string) {
 // ══════════════════════════════════════════════════════════════════════════════
 function PassIdCard({ pass }: { pass: any }) {
   const [flipped, setFlipped] = useState(false)
+  const { code, remaining, unsupported } = useRotatingCode(pass.qr_secret)
   const type = PASS_LABEL[pass.pass_type] || PASS_LABEL.monthly
   const expired = pass.valid_until && new Date(pass.valid_until) < new Date()
 
@@ -246,12 +319,26 @@ function PassIdCard({ pass }: { pass: any }) {
               </div>
             </div>
 
-            {/* QR + pass number strip */}
+            {/* Rotating QR + pass number strip */}
             <div style={{
               display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px 10px',
             }}>
-              <div style={{ background: 'white', border: '1px solid #D8E1F0', borderRadius: 5, padding: 3, flexShrink: 0 }}>
-                <QRCode value={pass.pass_id} size={54} />
+              <div style={{
+                background: 'white', border: `1px solid ${code ? '#D8E1F0' : '#F0C0C0'}`,
+                borderRadius: 5, padding: 3, flexShrink: 0, position: 'relative',
+              }}>
+                <QRCode value={`${pass.pass_id}|${code || '000000'}`} size={54} />
+                {/* Expiry ring — the passenger can see the code is about to turn over */}
+                <div style={{
+                  position: 'absolute', left: 3, right: 3, bottom: -1, height: 2,
+                  background: '#E2E8F0', borderRadius: 2, overflow: 'hidden',
+                }}>
+                  <div style={{
+                    width: `${(remaining / 30) * 100}%`, height: '100%',
+                    background: remaining <= 5 ? 'var(--red)' : 'var(--green)',
+                    transition: 'width 1s linear',
+                  }} />
+                </div>
               </div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 8, color: 'var(--mute)', letterSpacing: 0.4 }}>PASS ID · పాస్ ఐడీ</div>
@@ -259,8 +346,16 @@ function PassIdCard({ pass }: { pass: any }) {
                   fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700,
                   color: 'var(--text)', letterSpacing: 0.2, wordBreak: 'break-all',
                 }}>{pass.pass_id}</div>
-                <div style={{ fontSize: 8.5, color: 'var(--green)', fontWeight: 600, marginTop: 2 }}>
-                  ✓ Aadhaar verified · ends {pass.aadhaar_last4 || '****'}
+                <div style={{
+                  fontFamily: 'monospace', fontSize: 13, fontWeight: 700, letterSpacing: 2,
+                  color: unsupported ? 'var(--red)' : 'var(--blue)', marginTop: 2,
+                }}>
+                  {unsupported ? 'CODE UNAVAILABLE' : (code || '••••••')}
+                  {!unsupported && code && (
+                    <span style={{ fontSize: 8, fontWeight: 600, letterSpacing: 0, color: 'var(--mute)', marginLeft: 5 }}>
+                      {remaining}s
+                    </span>
+                  )}
                 </div>
               </div>
               <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -299,6 +394,10 @@ function PassIdCard({ pass }: { pass: any }) {
               <div style={{ display: 'flex', gap: 10 }}>
                 <Field labelEn="DATE OF BIRTH" labelTe="పుట్టిన తేదీ" value={fmtDate(pass.dob)} />
                 <Field labelEn="ISSUED ON" labelTe="జారీ తేదీ" value={fmtDate(pass.valid_from)} />
+              </div>
+
+              <div style={{ fontSize: 9, color: 'var(--green)', fontWeight: 600 }}>
+                ✓ Aadhaar verified · ends {pass.aadhaar_last4 || '****'}
               </div>
 
               <ol style={{ margin: '2px 0 0 14px', padding: 0, fontSize: 9, color: 'var(--text)', lineHeight: 1.65 }}>
@@ -461,67 +560,40 @@ export default function EPass() {
   // ── Existing pass lookup ────────────────────────────────────────────────────
   useEffect(() => {
     async function checkPass() {
-      const { data } = await supabase
-        .from('epasses')
-        .select('*')
-        .eq('status', 'active')
-        .order('created_at', { ascending: false })
-        .limit(1)
-      setExistingPass(data && data.length > 0 ? data[0] : null)
+      // Previously this selected the most recent active pass in the whole table,
+      // which only worked because anon could read every row. It now reads the
+      // one pass this browser holds a token for.
+      const pass = await fetchMyPass(loadCred())
+      setExistingPass(pass && pass.status === 'active' ? pass : null)
       setLoading(false)
     }
     if (screen === 'view') checkPass()
   }, [screen])
 
-  // ── Realtime + polling on the submitted screen ──────────────────────────────
+  // ── Status polling on the submitted screen ─────────────────────────────────
+  // The Realtime subscription is gone: with RLS locked down, anon no longer has
+  // SELECT on epasses, so postgres_changes would deliver nothing. A 5-second
+  // poll of get_my_epass() is the honest equivalent.
   useEffect(() => {
     if (screen !== 'submitted' || !submittedPassId) return
+    let alive = true
 
     async function fetchStatus() {
-      const { data } = await supabase
-        .from('epasses')
-        .select('status, updated_at, rejection_reason')
-        .eq('pass_id', submittedPassId)
-        .maybeSingle()
-
-      if (data && data.status) {
-        setPassStatus(data.status as 'pending'|'active'|'rejected')
-        if (data.rejection_reason) setRejectionReason(data.rejection_reason)
-        if (data.status === 'active' || data.status === 'rejected') {
-          setApprovedAt(new Date(data.updated_at).toLocaleTimeString('en-IN', {
-            hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
-          }))
-          if (data.status === 'active') {
-            supabase.from('epasses').select('*')
-              .eq('pass_id', submittedPassId).maybeSingle()
-              .then(({ data: latest }) => { if (latest) setExistingPass(latest) })
-          }
-        }
+      const pass = await fetchMyPass(loadCred())
+      if (!alive || !pass) return
+      setPassStatus(pass.status as 'pending' | 'active' | 'rejected')
+      if (pass.rejection_reason) setRejectionReason(pass.rejection_reason)
+      if (pass.status === 'active' || pass.status === 'rejected') {
+        setApprovedAt(new Date(pass.updated_at).toLocaleTimeString('en-IN', {
+          hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata',
+        }))
+        if (pass.status === 'active') setExistingPass(pass)
       }
     }
 
     fetchStatus()
     const interval = setInterval(fetchStatus, 5000)
-
-    const channel = supabase
-      .channel('epass-status-' + submittedPassId)
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'epasses',
-        filter: 'pass_id=eq.' + submittedPassId,
-      }, (payload: any) => {
-        const s = payload.new.status as 'pending'|'active'|'rejected'
-        setPassStatus(s)
-        if (payload.new.rejection_reason) setRejectionReason(payload.new.rejection_reason)
-        if (s === 'active' || s === 'rejected') {
-          setApprovedAt(new Date().toLocaleTimeString('en-IN', {
-            hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
-          }))
-          if (s === 'active') setExistingPass(payload.new)
-        }
-      })
-      .subscribe()
-
-    return () => { clearInterval(interval); supabase.removeChannel(channel) }
+    return () => { alive = false; clearInterval(interval) }
   }, [screen, submittedPassId])
 
   // ── Validation + submit ─────────────────────────────────────────────────────
@@ -585,12 +657,25 @@ export default function EPass() {
         id_doc_url: idPath,
         payment_method: form.payment,
         amount: AMOUNTS[form.passType] ?? 350,
-        status: 'pending',
         valid_from: new Date().toISOString().split('T')[0],
         valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         auto_renewal: form.payment === 'upi_autopay',
       })
       if (error) throw error
+
+      // The row is written; now claim the holder credential. claim_epass_token()
+      // only answers for a row created in the last ten minutes and only when the
+      // registered mobile matches, so the window is tight and self-closing.
+      stage = 'db:claim_epass_token'
+      setUploadMsg('Securing your pass…')
+      const { data: token, error: tokErr } = await supabase.rpc('claim_epass_token', {
+        p_pass_id: newPassId, p_mobile: form.mobile,
+      })
+      if (tokErr || !token) {
+        throw new Error('application saved, but this device could not be linked to it — '
+          + `note your reference ${newPassId} and contact the depot`)
+      }
+      saveCred({ passId: newPassId, token: token as string })
 
       setSubmittedPassId(newPassId)
       setPassStatus('pending')
