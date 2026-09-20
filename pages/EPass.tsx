@@ -74,9 +74,15 @@ async function uploadTo(bucket: string, path: string, file: File, maxDim: number
   const blob = await compressImage(file, maxDim, quality)
   const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg'
   const fullPath = `${path}.${ext}`
+  // upsert is deliberately OFF. Every application gets a fresh pass_id, so these
+  // paths never legitimately collide. Enabling upsert makes storage-api issue
+  // INSERT … ON CONFLICT DO UPDATE, which would require granting anon an UPDATE
+  // policy on storage.objects — and that would let anyone overwrite another
+  // applicant's photo or Aadhaar image by guessing a path. A collision here is a
+  // bug worth surfacing, not something to silently overwrite.
   const { error } = await supabase.storage.from(bucket).upload(fullPath, blob, {
     contentType: file.type === 'application/pdf' ? 'application/pdf' : 'image/jpeg',
-    upsert: true,
+    upsert: false,
   })
   if (error) throw error
   if (bucket === 'epass-photos') {
@@ -84,6 +90,31 @@ async function uploadTo(bucket: string, path: string, file: File, maxDim: number
   }
   // Private bucket — store the object path, not a URL. The depot portal signs it.
   return fullPath
+}
+
+// Supabase returns the same terse "new row violates row-level security policy"
+// whether a storage upload or a table insert was blocked. Without knowing which
+// step failed the message is undiagnosable, so every await is tagged with a stage
+// and the error is translated into something that names the actual misconfiguration.
+function describeFailure(stage: string, e: any): string {
+  const msg = String(e?.message || e || 'unknown error')
+  const rls = /row-level security/i.test(msg)
+  if (rls && stage.startsWith('storage:')) {
+    const bucket = stage.split(':')[1]
+    return `upload to the "${bucket}" bucket was refused by storage security rules. ` +
+           `The bucket exists, but it has no INSERT policy for the anon role.`
+  }
+  if (/already exists|duplicate/i.test(msg) && stage.startsWith('storage:')) {
+    return 'a file already exists at this path. Retry — a new application reference will be generated.'
+  }
+  if (rls) return 'the application row was refused by security rules on the epasses table.'
+  if (/bucket not found/i.test(msg)) {
+    return `storage bucket "${stage.split(':')[1] || '?'}" does not exist — bucket creation in the migration did not run.`
+  }
+  if (/schema cache|PGRST204/i.test(msg) || /column .* does not exist/i.test(msg)) {
+    return `the database is missing a column this form writes (${msg}) — run epass_v2_migration.sql, then reload the PostgREST schema cache.`
+  }
+  return `${msg} [stage: ${stage}]`
 }
 
 // ── Zones (replaces route selection) ──────────────────────────────────────────
@@ -503,6 +534,8 @@ export default function EPass() {
     if (!form.institution.trim()) return 'Organisation / institution name is required.'
     if (!photoFile) return 'A recent passport-style photo is required for the pass.'
     if (!aadhaarFile) return 'An Aadhaar card image or PDF is required.'
+    const tooBig = [aadhaarFile, idFile].find(f => f && f.type === 'application/pdf' && f.size > 2_800_000)
+    if (tooBig) return `"${tooBig.name}" is ${(tooBig.size / 1048576).toFixed(1)} MB. PDFs are not compressed — keep them under 2.8 MB, or upload a photo of the document instead.`
     if (form.passType === 'student' && !idFile) return 'A college / institution ID is required for a Student pass.'
     if (form.passType === 'senior' && (age === null || age < 60))
       return `Senior Citizen pass requires age 60 or above. Date of birth entered gives age ${age}.`
@@ -517,19 +550,24 @@ export default function EPass() {
     setSubmitting(true)
 
     const newPassId = genPassId()
+    let stage = 'init'
     try {
+      stage = 'storage:epass-photos'
       setUploadMsg('Uploading photo…')
       const photoUrl = await uploadTo('epass-photos', `${newPassId}/photo`, photoFile!, 600, 0.82)
 
+      stage = 'storage:epass-docs'
       setUploadMsg('Uploading Aadhaar proof…')
       const aadhaarPath = await uploadTo('epass-docs', `${newPassId}/aadhaar`, aadhaarFile!, 1400, 0.75)
 
       let idPath: string | null = null
       if (idFile) {
+        stage = 'storage:epass-docs'
         setUploadMsg('Uploading institution ID…')
         idPath = await uploadTo('epass-docs', `${newPassId}/institution-id`, idFile, 1400, 0.75)
       }
 
+      stage = 'db:epasses.insert'
       setUploadMsg('Submitting application…')
       const { error } = await supabase.from('epasses').insert({
         pass_id: newPassId,
@@ -558,7 +596,8 @@ export default function EPass() {
       setPassStatus('pending')
       setScreen('submitted')
     } catch (e: any) {
-      setFormError(`Submission failed: ${e?.message || e}. Nothing was saved — please retry.`)
+      console.error('[ePass submit] stage=%s', stage, e)
+      setFormError(`Submission failed at ${stage} — ${describeFailure(stage, e)} Nothing was saved.`)
     } finally {
       setSubmitting(false)
       setUploadMsg('')
