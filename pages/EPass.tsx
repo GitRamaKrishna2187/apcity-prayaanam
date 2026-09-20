@@ -497,7 +497,7 @@ function UploadTile({ label, sublabel, file, preview, required, accept, capture,
   )
 }
 
-type Screen = 'view' | 'apply' | 'submitted'
+type Screen = 'view' | 'apply' | 'submitted' | 'recover'
 
 export default function EPass() {
   const nav = useNavigate()
@@ -531,6 +531,12 @@ export default function EPass() {
     institution: 'AP State Government — Visakhapatnam',
     payment: 'upi_autopay',
   })
+  // Recovery: a pass lives in one browser's storage, so a cleared cache, a new
+  // phone, or a pass issued before tokens existed needs a way back in.
+  const [rec, setRec] = useState({ passId: '', mobile: '', last4: '' })
+  const [recBusy, setRecBusy] = useState(false)
+  const [recErr, setRecErr] = useState('')
+
   const [photoFile, setPhotoFile]   = useState<File | null>(null)
   const [photoPrev, setPhotoPrev]   = useState<string | null>(null)
   const [aadhaarFile, setAadhaarFile] = useState<File | null>(null)
@@ -595,6 +601,31 @@ export default function EPass() {
     const interval = setInterval(fetchStatus, 5000)
     return () => { alive = false; clearInterval(interval) }
   }, [screen, submittedPassId])
+
+  const handleRecover = async () => {
+    setRecErr('')
+    const passId = rec.passId.trim().toUpperCase()
+    if (!passId) { setRecErr('Enter the pass reference printed on your card.'); return }
+    if (!/^\d{10}$/.test(rec.mobile)) { setRecErr('Enter the 10-digit mobile you registered with.'); return }
+    if (!/^\d{4}$/.test(rec.last4)) { setRecErr('Enter the last 4 digits of your Aadhaar.'); return }
+
+    setRecBusy(true)
+    const { data, error } = await supabase.rpc('recover_epass_access', {
+      p_pass_id: passId, p_mobile: rec.mobile, p_aadhaar_last4: rec.last4,
+    })
+    setRecBusy(false)
+
+    if (error) { setRecErr(error.message); return }
+    if (!data) {
+      // Deliberately one message for every failure mode — saying which field was
+      // wrong would turn this form into an oracle for guessing pass details.
+      setRecErr('Those details do not match an active pass. Check the reference and try again.')
+      return
+    }
+    saveCred({ passId, token: data as string })
+    setRec({ passId: '', mobile: '', last4: '' })
+    setScreen('view')
+  }
 
   // ── Validation + submit ─────────────────────────────────────────────────────
   function validate(): string {
@@ -832,6 +863,77 @@ export default function EPass() {
               border: '1.5px solid var(--blue)', borderRadius: 10, fontFamily: 'Rajdhani,sans-serif',
               fontSize: 15, fontWeight: 700, cursor: 'pointer',
             }} onClick={() => nav('/')}>← Back to Home</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // ══ RECOVER SCREEN ═══════════════════════════════════════════════════════════
+  if (screen === 'recover') {
+    return (
+      <div className="phone-shell screen-enter">
+        <div className="status-bar"><span>{time}</span><span>APCityPrayaanam • 4G</span></div>
+
+        <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => setScreen('view')} style={{
+              width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.15)',
+              border: 'none', color: 'white', fontSize: 16, cursor: 'pointer',
+            }}>←</button>
+            <div>
+              <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700, color: 'white' }}>
+                Restore My ePass
+              </div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)' }}>నా ఈ-పాస్ పునరుద్ధరణ</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 130px)' }}>
+          <div style={{ margin: 14, background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
+            <div style={{ fontSize: 12, color: 'var(--mute)', lineHeight: 1.6, marginBottom: 14 }}>
+              Use this on a new phone, after clearing your browser, or if your pass was
+              issued before this app stored it on your device.
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label">Pass Reference · పాస్ ఐడీ</label>
+              <input type="text" className="form-input" placeholder="APTC-26-VSP-XXXXXXXX"
+                value={rec.passId}
+                onChange={e => setRec(r => ({ ...r, passId: e.target.value.toUpperCase() }))} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+              <div>
+                <label className="form-label">Registered Mobile</label>
+                <input type="tel" inputMode="numeric" maxLength={10} className="form-input"
+                  value={rec.mobile}
+                  onChange={e => setRec(r => ({ ...r, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) }))} />
+              </div>
+              <div>
+                <label className="form-label">Aadhaar — Last 4</label>
+                <input type="tel" inputMode="numeric" maxLength={4} className="form-input" placeholder="XXXX"
+                  value={rec.last4}
+                  onChange={e => setRec(r => ({ ...r, last4: e.target.value.replace(/\D/g, '').slice(0, 4) }))} />
+              </div>
+            </div>
+
+            {recErr && (
+              <div style={{
+                background: '#FDECEA', border: '1px solid #EF9A9A', borderRadius: 8,
+                padding: '10px 12px', fontSize: 12, color: '#C0392B', marginBottom: 10, lineHeight: 1.5,
+              }}>⚠ {recErr}</div>
+            )}
+
+            <button className="btn-teal" onClick={handleRecover} disabled={recBusy}>
+              {recBusy ? 'Checking…' : '↻ RESTORE PASS'}
+            </button>
+
+            <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 10, lineHeight: 1.5 }}>
+              Restoring issues a new security key for the pass, so it stops working on any
+              device it was previously opened on. If your phone was lost, this locks it out.
+            </div>
           </div>
         </div>
       </div>
@@ -1087,6 +1189,15 @@ export default function EPass() {
           <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--mute)', marginTop: 10 }}>
             Photo + Aadhaar + institution ID · verified by depot manager · UPI payment
           </div>
+          {!existingPass && (
+            <button onClick={() => setScreen('recover')} style={{
+              width: '100%', marginTop: 10, padding: 11, background: 'transparent',
+              color: 'var(--blue)', border: '1.5px solid var(--blue)', borderRadius: 10,
+              fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+            }}>
+              ↻ I ALREADY HAVE A PASS — RESTORE IT
+            </button>
+          )}
         </div>
 
         <div style={{ margin: '0 14px 20px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
