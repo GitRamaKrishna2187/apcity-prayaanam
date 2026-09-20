@@ -1,18 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import type { CSSProperties, Dispatch, SetStateAction } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
 
 // ── QR code generator (pure SVG, no library needed) ───────────────────────────
 function QRCode({ value, size = 120 }: { value: string; size?: number }) {
-  // Simple deterministic pattern from string hash — decorative QR for demo
   const hash = (s: string) => s.split('').reduce((a, c) => ((a << 5) - a + c.charCodeAt(0)) | 0, 0)
   const h = Math.abs(hash(value))
   const cells = 21
   const cellSize = size / cells
   const bits: boolean[][] = Array.from({ length: cells }, (_, r) =>
     Array.from({ length: cells }, (_, c) => {
-      // Corner finder patterns
       const inCorner = (r < 7 && c < 7) || (r < 7 && c >= cells - 7) || (r >= cells - 7 && c < 7)
       if (inCorner) {
         const br = r < 7 ? r : r - (cells - 7)
@@ -21,7 +20,6 @@ function QRCode({ value, size = 120 }: { value: string; size?: number }) {
         if (br >= 2 && br <= 4 && bc >= 2 && bc <= 4) return true
         return false
       }
-      // Data area — pseudo-random from hash
       return ((h ^ (r * 31 + c * 17 + r * c)) & 1) === 1
     })
   )
@@ -44,43 +42,392 @@ function genPassId() {
   return `APTC-${year}-VSP-${num.toString().padStart(7, '0')}`
 }
 
+// ── Image handling ────────────────────────────────────────────────────────────
+// Applicants upload from a phone on mobile data. A raw 4 MB camera JPEG will
+// either time out or blow the bucket's file_size_limit, so everything is
+// downscaled and re-encoded in the browser before it ever hits the network.
+function compressImage(file: File, maxDim: number, quality: number): Promise<Blob> {
+  return new Promise((resolve, reject) => {
+    if (file.type === 'application/pdf') { resolve(file); return }
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      const scale = Math.min(1, maxDim / Math.max(width, height))
+      width = Math.round(width * scale)
+      height = Math.round(height * scale)
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { reject(new Error('canvas unavailable')); return }
+      ctx.drawImage(img, 0, 0, width, height)
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('encode failed')), 'image/jpeg', quality)
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('not a readable image')) }
+    img.src = url
+  })
+}
+
+async function uploadTo(bucket: string, path: string, file: File, maxDim: number, quality: number) {
+  const blob = await compressImage(file, maxDim, quality)
+  const ext = file.type === 'application/pdf' ? 'pdf' : 'jpg'
+  const fullPath = `${path}.${ext}`
+  const { error } = await supabase.storage.from(bucket).upload(fullPath, blob, {
+    contentType: file.type === 'application/pdf' ? 'application/pdf' : 'image/jpeg',
+    upsert: true,
+  })
+  if (error) throw error
+  if (bucket === 'epass-photos') {
+    return supabase.storage.from(bucket).getPublicUrl(fullPath).data.publicUrl
+  }
+  // Private bucket — store the object path, not a URL. The depot portal signs it.
+  return fullPath
+}
+
+// ── Zones (replaces route selection) ──────────────────────────────────────────
+const ZONES = [
+  'Zone A — North (Madhurawada · Rushikonda · Bheemili)',
+  'Zone B — Central (RTC Complex · Dwaraka Nagar · Siripuram)',
+  'Zone C — South (Gajuwaka · Kurmannapalem · Steel Plant)',
+  'Zone D — West (Pendurthi · Sabbavaram · Anandapuram)',
+  'All Zones — Visakhapatnam City',
+]
+
+const AMOUNTS: Record<string, number> = { monthly: 350, student: 150, senior: 175, daily: 50 }
+
+function ageFromDob(dob: string): number | null {
+  if (!dob) return null
+  const d = new Date(dob)
+  if (isNaN(d.getTime())) return null
+  const now = new Date()
+  let a = now.getFullYear() - d.getFullYear()
+  const m = now.getMonth() - d.getMonth()
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) a--
+  return a
+}
+
+const PASS_LABEL: Record<string, { en: string; te: string }> = {
+  monthly: { en: 'MONTHLY', te: 'నెలవారీ' },
+  daily:   { en: 'DAILY',   te: 'రోజువారీ' },
+  student: { en: 'STUDENT', te: 'విద్యార్థి' },
+  senior:  { en: 'SENIOR CITIZEN', te: 'వయోవృద్ధుల' },
+}
+
+function fmtDate(d: string) {
+  if (!d) return '—'
+  const dt = new Date(d)
+  if (isNaN(dt.getTime())) return d
+  return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ID CARD — rendered as an actual identity card, not a screen section.
+// Front: photo, name, organisation/institution, pass type, valid until.
+// Back:  zone, DOB, conditions of use, helpline. Tap to flip.
+// ══════════════════════════════════════════════════════════════════════════════
+function PassIdCard({ pass }: { pass: any }) {
+  const [flipped, setFlipped] = useState(false)
+  const type = PASS_LABEL[pass.pass_type] || PASS_LABEL.monthly
+  const expired = pass.valid_until && new Date(pass.valid_until) < new Date()
+
+  const shell: CSSProperties = {
+    position: 'absolute', inset: 0, backfaceVisibility: 'hidden',
+    borderRadius: 14, overflow: 'hidden', background: 'white',
+    border: '1px solid #C9D6EC', boxShadow: '0 10px 28px rgba(13,43,94,0.22)',
+    display: 'flex', flexDirection: 'column',
+  }
+
+  return (
+    <div style={{ margin: 14 }}>
+      <div
+        onClick={() => setFlipped(f => !f)}
+        style={{ perspective: 1200, cursor: 'pointer', height: 322 }}
+        title="Tap to flip"
+      >
+        <div style={{
+          position: 'relative', width: '100%', height: '100%',
+          transformStyle: 'preserve-3d', transition: 'transform 0.55s cubic-bezier(.4,.2,.2,1)',
+          transform: flipped ? 'rotateY(180deg)' : 'none',
+        }}>
+
+          {/* ── FRONT ─────────────────────────────────────────────────── */}
+          <div style={shell}>
+            {/* Issuing authority band */}
+            <div style={{
+              background: 'linear-gradient(135deg, var(--blue) 0%, #12305C 100%)',
+              padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 9,
+              borderBottom: '3px solid var(--gold)',
+            }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%', background: 'var(--gold)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 17, flexShrink: 0,
+              }}>🚌</div>
+              <div style={{ lineHeight: 1.25, flex: 1, minWidth: 0 }}>
+                <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 13, fontWeight: 700, color: 'white', letterSpacing: 0.6 }}>
+                  APSRTC · VISAKHAPATNAM CITY
+                </div>
+                <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.72)' }}>
+                  ఆంధ్రప్రదేశ్ రాష్ట్ర రోడ్డు రవాణా సంస్థ
+                </div>
+              </div>
+              <div style={{
+                background: 'var(--gold)', color: 'var(--blue)', fontSize: 9, fontWeight: 800,
+                padding: '3px 8px', borderRadius: 4, textAlign: 'center', lineHeight: 1.3, flexShrink: 0,
+              }}>
+                <div>{type.en}</div>
+                <div style={{ fontSize: 8, fontWeight: 600 }}>{type.te}</div>
+              </div>
+            </div>
+
+            {/* Card body */}
+            <div style={{ display: 'flex', gap: 12, padding: '12px 12px 8px', flex: 1 }}>
+              {/* Photo block */}
+              <div style={{ flexShrink: 0 }}>
+                <div style={{
+                  width: 86, height: 104, borderRadius: 6, overflow: 'hidden',
+                  border: '2px solid var(--blue)', background: '#EDF1F8',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {pass.photo_url
+                    ? <img src={pass.photo_url} alt="Pass holder"
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <span style={{ fontSize: 30, opacity: 0.35 }}>👤</span>}
+                </div>
+                <div style={{
+                  fontSize: 7.5, color: 'var(--mute)', textAlign: 'center',
+                  marginTop: 3, letterSpacing: 0.3,
+                }}>PHOTO · ఫోటో</div>
+              </div>
+
+              {/* Details block */}
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                <Field labelEn="NAME" labelTe="పేరు" value={pass.holder_name} big />
+                <Field labelEn="ORGANISATION / INSTITUTION" labelTe="సంస్థ"
+                       value={pass.institution || pass.org_name || '—'} />
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <Field labelEn="PASS TYPE" labelTe="పాస్ రకం" value={type.en} />
+                  <Field labelEn="VALID UNTIL" labelTe="చెల్లుబాటు"
+                         value={fmtDate(pass.valid_until)} danger={!!expired} />
+                </div>
+              </div>
+            </div>
+
+            {/* QR + pass number strip */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px 10px',
+            }}>
+              <div style={{ background: 'white', border: '1px solid #D8E1F0', borderRadius: 5, padding: 3, flexShrink: 0 }}>
+                <QRCode value={pass.pass_id} size={54} />
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 8, color: 'var(--mute)', letterSpacing: 0.4 }}>PASS ID · పాస్ ఐడీ</div>
+                <div style={{
+                  fontFamily: 'monospace', fontSize: 11.5, fontWeight: 700,
+                  color: 'var(--text)', letterSpacing: 0.2, wordBreak: 'break-all',
+                }}>{pass.pass_id}</div>
+                <div style={{ fontSize: 8.5, color: 'var(--green)', fontWeight: 600, marginTop: 2 }}>
+                  ✓ Aadhaar verified · ends {pass.aadhaar_last4 || '****'}
+                </div>
+              </div>
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{
+                  fontFamily: 'Rajdhani,sans-serif', fontSize: 11, fontWeight: 700,
+                  color: 'var(--blue)', borderBottom: '1px solid var(--mute)', paddingBottom: 1,
+                }}>Depot Manager</div>
+                <div style={{ fontSize: 7.5, color: 'var(--mute)', marginTop: 2 }}>Issuing Authority</div>
+              </div>
+            </div>
+
+            {/* Footer band */}
+            <div style={{
+              background: 'var(--blue)', padding: '5px 12px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.8)' }}>
+                NON-TRANSFERABLE · బదిలీ చేయరాదు
+              </span>
+              <span style={{ fontSize: 8, color: 'var(--gold)', fontWeight: 700 }}>TAP TO FLIP ⟳</span>
+            </div>
+          </div>
+
+          {/* ── BACK ──────────────────────────────────────────────────── */}
+          <div style={{ ...shell, transform: 'rotateY(180deg)' }}>
+            <div style={{ background: '#12305C', padding: '7px 12px', borderBottom: '3px solid var(--gold)' }}>
+              <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 12, fontWeight: 700, color: 'white', letterSpacing: 0.6 }}>
+                CONDITIONS OF USE · వినియోగ నిబంధనలు
+              </div>
+            </div>
+
+            <div style={{ padding: '10px 12px', flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Field labelEn="ZONE OF VALIDITY" labelTe="జోన్" value={pass.zone || pass.route || '—'} />
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Field labelEn="DATE OF BIRTH" labelTe="పుట్టిన తేదీ" value={fmtDate(pass.dob)} />
+                <Field labelEn="ISSUED ON" labelTe="జారీ తేదీ" value={fmtDate(pass.valid_from)} />
+              </div>
+
+              <ol style={{ margin: '2px 0 0 14px', padding: 0, fontSize: 9, color: 'var(--text)', lineHeight: 1.65 }}>
+                <li>Valid only for the holder named overleaf. Non-transferable.<br/>
+                  <span style={{ color: 'var(--mute)' }}>పాస్ కేవలం పేర్కొన్న వ్యక్తికి మాత్రమే చెల్లుతుంది.</span></li>
+                <li>Produce the QR code on demand to the conductor or checking staff.<br/>
+                  <span style={{ color: 'var(--mute)' }}>కండక్టర్ అడిగినప్పుడు QR చూపవలెను.</span></li>
+                <li>Misuse attracts penalty under APSRTC conduct rules and cancellation.<br/>
+                  <span style={{ color: 'var(--mute)' }}>దుర్వినియోగం చేస్తే రద్దు మరియు జరిమానా.</span></li>
+              </ol>
+
+              <div style={{
+                marginTop: 'auto', background: 'var(--light)', borderRadius: 6,
+                padding: '6px 9px', fontSize: 9, color: 'var(--blue)',
+              }}>
+                <b>Helpline · హెల్ప్‌లైన్:</b> 0866-2570005 · apsrtc.ap.gov.in
+              </div>
+            </div>
+
+            <div style={{ background: 'var(--blue)', padding: '5px 12px', textAlign: 'center' }}>
+              <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.8)' }}>
+                If found, return to the nearest APSRTC depot
+              </span>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Field({ labelEn, labelTe, value, big, danger }: {
+  labelEn: string; labelTe: string; value: string; big?: boolean; danger?: boolean
+}) {
+  return (
+    <div style={{ minWidth: 0, flex: 1 }}>
+      <div style={{ fontSize: 7.5, color: 'var(--mute)', letterSpacing: 0.4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {labelEn} · {labelTe}
+      </div>
+      <div style={{
+        fontFamily: big ? 'Rajdhani,sans-serif' : 'inherit',
+        fontSize: big ? 17 : 11,
+        fontWeight: big ? 700 : 600,
+        color: danger ? 'var(--red)' : 'var(--text)',
+        lineHeight: 1.3,
+        overflow: 'hidden', textOverflow: 'ellipsis',
+        whiteSpace: big ? 'nowrap' : 'normal',
+      }}>{value || '—'}</div>
+    </div>
+  )
+}
+
+// ── Upload tile used by the registration form ────────────────────────────────
+function UploadTile({ label, sublabel, file, preview, required, accept, capture, onPick }: {
+  label: string; sublabel: string; file: File | null; preview: string | null
+  required: boolean; accept: string; capture?: 'user' | 'environment'
+  onPick: (f: File | null) => void
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <div>
+      <label className="form-label">{label} {required && <span style={{ color: 'var(--red)' }}>*</span>}</label>
+      <div
+        onClick={() => ref.current?.click()}
+        style={{
+          border: `1.5px dashed ${file ? 'var(--green)' : '#C9D6EC'}`,
+          background: file ? '#F3FBF5' : '#FAFBFE',
+          borderRadius: 8, padding: 10, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}
+      >
+        <div style={{
+          width: 44, height: 52, borderRadius: 5, flexShrink: 0, overflow: 'hidden',
+          background: '#E7EDF8', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {preview
+            ? <img src={preview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <span style={{ fontSize: 19, opacity: 0.5 }}>{accept.includes('pdf') ? '📄' : '📷'}</span>}
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: file ? 'var(--green)' : 'var(--text)' }}>
+            {file ? `✓ ${file.name.slice(0, 26)}` : 'Tap to upload'}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--mute)', marginTop: 2 }}>{sublabel}</div>
+        </div>
+        {file && (
+          <button
+            onClick={e => { e.stopPropagation(); onPick(null); if (ref.current) ref.current.value = '' }}
+            style={{ background: 'none', border: 'none', color: 'var(--mute)', fontSize: 16, cursor: 'pointer' }}
+          >✕</button>
+        )}
+      </div>
+      <input ref={ref} type="file" accept={accept} capture={capture} style={{ display: 'none' }}
+        onChange={e => onPick(e.target.files?.[0] || null)} />
+    </div>
+  )
+}
+
 type Screen = 'view' | 'apply' | 'submitted'
 
 export default function EPass() {
   const nav = useNavigate()
   const { t } = useLang()
   const [screen, setScreen] = useState<Screen>('view')
-  // submittedPassId is generated ONCE when the form is submitted, not on mount
-  // This ensures the poll always queries the same ID that was inserted into Supabase
   const [submittedPassId, setSubmittedPassId] = useState<string>('')
   const [existingPass, setExistingPass] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [passStatus, setPassStatus] = useState<'pending'|'active'|'rejected'>('pending')
   const [approvedAt, setApprovedAt] = useState<string>('')
+  const [rejectionReason, setRejectionReason] = useState<string>('')
 
   const getIST = () => new Date().toLocaleTimeString('en-IN', {
     hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
   })
   const [time, setTime] = useState(getIST())
   useEffect(() => {
-    const t = setInterval(() => setTime(getIST()), 1000)
-    return () => clearInterval(t)
+    const tk = setInterval(() => setTime(getIST()), 1000)
+    return () => clearInterval(tk)
   }, [])
 
-  // Form state pre-filled with dummy details
+  // ── Form state ──────────────────────────────────────────────────────────────
   const [form, setForm] = useState({
     fullName: 'BVASSR KRISHNA',
     aadhaar: '',
     mobile: '9848032919',
+    dob: '',
     passType: 'monthly',
-    route: 'Visakhapatnam — All Routes',
+    zone: ZONES[4],
     cfmsId: '14815316',
-    orgName: 'AP State Government — Visakhapatnam',
+    institution: 'AP State Government — Visakhapatnam',
     payment: 'upi_autopay',
   })
+  const [photoFile, setPhotoFile]   = useState<File | null>(null)
+  const [photoPrev, setPhotoPrev]   = useState<string | null>(null)
+  const [aadhaarFile, setAadhaarFile] = useState<File | null>(null)
+  const [aadhaarPrev, setAadhaarPrev] = useState<string | null>(null)
+  const [idFile, setIdFile]         = useState<File | null>(null)
+  const [idPrev, setIdPrev]         = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [uploadMsg, setUploadMsg]   = useState('')
+  const [formError, setFormError]   = useState('')
 
-  // Check if user already has a pass
+  // Revokes the previous object URL before creating a new one, so repeatedly
+  // re-picking a file does not leak blob handles on a low-end phone.
+  const pickWithPreview = (
+    setFile: Dispatch<SetStateAction<File | null>>,
+    setPrev: Dispatch<SetStateAction<string | null>>
+  ) => (f: File | null) => {
+    setFile(f)
+    setPrev(prev => {
+      if (prev) URL.revokeObjectURL(prev)
+      return f && f.type !== 'application/pdf' ? URL.createObjectURL(f) : null
+    })
+  }
+
+  const age = ageFromDob(form.dob)
+  const idDocRequired = form.passType === 'student' || form.passType === 'senior'
+
+  // ── Existing pass lookup ────────────────────────────────────────────────────
   useEffect(() => {
     async function checkPass() {
       const { data } = await supabase
@@ -89,111 +436,136 @@ export default function EPass() {
         .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)
-      if (data && data.length > 0) setExistingPass(data[0])
-      else setExistingPass(null)
+      setExistingPass(data && data.length > 0 ? data[0] : null)
       setLoading(false)
     }
     if (screen === 'view') checkPass()
   }, [screen])
 
-  // ── Realtime + polling when on submitted screen ─────────────────────────────
-  // Instant update via Supabase Realtime + 5s fallback polling
+  // ── Realtime + polling on the submitted screen ──────────────────────────────
   useEffect(() => {
     if (screen !== 'submitted' || !submittedPassId) return
 
     async function fetchStatus() {
       const { data } = await supabase
         .from('epasses')
-        .select('status, updated_at')
+        .select('status, updated_at, rejection_reason')
         .eq('pass_id', submittedPassId)
         .maybeSingle()
 
       if (data && data.status) {
         setPassStatus(data.status as 'pending'|'active'|'rejected')
+        if (data.rejection_reason) setRejectionReason(data.rejection_reason)
         if (data.status === 'active' || data.status === 'rejected') {
           setApprovedAt(new Date(data.updated_at).toLocaleTimeString('en-IN', {
-            hour: '2-digit', minute: '2-digit', hour12: true,
-            timeZone: 'Asia/Kolkata'
+            hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
           }))
           if (data.status === 'active') {
             supabase.from('epasses').select('*')
-              .eq('status', 'active')
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .then(({ data: latest }) => {
-                if (latest && latest[0]) setExistingPass(latest[0])
-              })
+              .eq('pass_id', submittedPassId).maybeSingle()
+              .then(({ data: latest }) => { if (latest) setExistingPass(latest) })
           }
         }
       }
     }
 
-    // 1. Fetch immediately
     fetchStatus()
-
-    // 2. Poll every 5 seconds as primary mechanism
     const interval = setInterval(fetchStatus, 5000)
 
-    // 3. Realtime subscription for instant update when depot manager approves
     const channel = supabase
       .channel('epass-status-' + submittedPassId)
       .on('postgres_changes', {
-        event: 'UPDATE',
-        schema: 'public',
-        table: 'epasses',
+        event: 'UPDATE', schema: 'public', table: 'epasses',
         filter: 'pass_id=eq.' + submittedPassId,
       }, (payload: any) => {
         const s = payload.new.status as 'pending'|'active'|'rejected'
         setPassStatus(s)
+        if (payload.new.rejection_reason) setRejectionReason(payload.new.rejection_reason)
         if (s === 'active' || s === 'rejected') {
           setApprovedAt(new Date().toLocaleTimeString('en-IN', {
-            hour: '2-digit', minute: '2-digit', hour12: true,
-            timeZone: 'Asia/Kolkata'
+            hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Kolkata'
           }))
+          if (s === 'active') setExistingPass(payload.new)
         }
       })
       .subscribe()
 
-    return () => {
-      clearInterval(interval)
-      supabase.removeChannel(channel)
-    }
+    return () => { clearInterval(interval); supabase.removeChannel(channel) }
   }, [screen, submittedPassId])
 
-  const handleSubmit = async () => {
-    if (!form.aadhaar || form.aadhaar.length < 12) {
-      alert('Please enter a valid 12-digit Aadhaar number')
-      return
-    }
-    setSubmitting(true)
-    // Generate a fresh passId AT SUBMIT TIME — not at component mount
-    const newPassId = genPassId()
-    setSubmittedPassId(newPassId)
-    // Insert into Supabase
-    await supabase.from('epasses').insert({
-      pass_id: newPassId,
-      holder_name: form.fullName,
-      aadhaar_last4: form.aadhaar.slice(-4),
-      mobile: form.mobile,
-      pass_type: form.passType,
-      route: form.route,
-      cfms_id: form.cfmsId,
-      org_name: form.orgName,
-      payment_method: form.payment,
-      amount: form.passType === 'monthly' ? 350 : form.passType === 'student' ? 150 : form.passType === 'senior' ? 175 : 50,
-      status: 'pending',
-      valid_from: new Date().toISOString().split('T')[0],
-      valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      auto_renewal: form.payment === 'upi_autopay',
-    })
-    setSubmitting(false)
-    setScreen('submitted')
+  // ── Validation + submit ─────────────────────────────────────────────────────
+  function validate(): string {
+    if (!form.fullName.trim()) return 'Enter the full name as printed on Aadhaar.'
+    if (!/^\d{12}$/.test(form.aadhaar)) return 'Aadhaar number must be exactly 12 digits.'
+    if (!/^\d{10}$/.test(form.mobile)) return 'Mobile number must be exactly 10 digits.'
+    if (!form.dob) return 'Date of birth is required.'
+    if (age === null || age < 5 || age > 110) return 'Enter a valid date of birth.'
+    if (!form.institution.trim()) return 'Organisation / institution name is required.'
+    if (!photoFile) return 'A recent passport-style photo is required for the pass.'
+    if (!aadhaarFile) return 'An Aadhaar card image or PDF is required.'
+    if (form.passType === 'student' && !idFile) return 'A college / institution ID is required for a Student pass.'
+    if (form.passType === 'senior' && (age === null || age < 60))
+      return `Senior Citizen pass requires age 60 or above. Date of birth entered gives age ${age}.`
+    if (form.passType === 'senior' && !idFile) return 'An age / identity proof is required for a Senior Citizen pass.'
+    return ''
   }
 
-  const getAmountLabel = () => {
-    const map: Record<string, string> = { monthly: '₹350', student: '₹150', senior: '₹175', daily: '₹50' }
-    return map[form.passType] || '₹350'
+  const handleSubmit = async () => {
+    const err = validate()
+    if (err) { setFormError(err); return }
+    setFormError('')
+    setSubmitting(true)
+
+    const newPassId = genPassId()
+    try {
+      setUploadMsg('Uploading photo…')
+      const photoUrl = await uploadTo('epass-photos', `${newPassId}/photo`, photoFile!, 600, 0.82)
+
+      setUploadMsg('Uploading Aadhaar proof…')
+      const aadhaarPath = await uploadTo('epass-docs', `${newPassId}/aadhaar`, aadhaarFile!, 1400, 0.75)
+
+      let idPath: string | null = null
+      if (idFile) {
+        setUploadMsg('Uploading institution ID…')
+        idPath = await uploadTo('epass-docs', `${newPassId}/institution-id`, idFile, 1400, 0.75)
+      }
+
+      setUploadMsg('Submitting application…')
+      const { error } = await supabase.from('epasses').insert({
+        pass_id: newPassId,
+        holder_name: form.fullName.trim(),
+        aadhaar_last4: form.aadhaar.slice(-4),
+        mobile: form.mobile,
+        dob: form.dob,
+        pass_type: form.passType,
+        zone: form.zone,
+        cfms_id: form.cfmsId,
+        institution: form.institution.trim(),
+        org_name: form.institution.trim(),   // kept in sync for older readers
+        photo_url: photoUrl,
+        aadhaar_doc_url: aadhaarPath,
+        id_doc_url: idPath,
+        payment_method: form.payment,
+        amount: AMOUNTS[form.passType] ?? 350,
+        status: 'pending',
+        valid_from: new Date().toISOString().split('T')[0],
+        valid_until: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        auto_renewal: form.payment === 'upi_autopay',
+      })
+      if (error) throw error
+
+      setSubmittedPassId(newPassId)
+      setPassStatus('pending')
+      setScreen('submitted')
+    } catch (e: any) {
+      setFormError(`Submission failed: ${e?.message || e}. Nothing was saved — please retry.`)
+    } finally {
+      setSubmitting(false)
+      setUploadMsg('')
+    }
   }
+
+  const getAmountLabel = () => `₹${AMOUNTS[form.passType] ?? 350}`
 
   if (loading) return (
     <div className="phone-shell">
@@ -204,14 +576,11 @@ export default function EPass() {
     </div>
   )
 
-  // ── SUBMITTED CONFIRMATION SCREEN ──────────────────────────────────────────
+  // ══ SUBMITTED CONFIRMATION ═══════════════════════════════════════════════════
   if (screen === 'submitted') {
     return (
       <div className="phone-shell screen-enter">
-        <div className="status-bar">
-          <span>{time}</span>
-          <span>APCityPrayaanam • 4G</span>
-        </div>
+        <div className="status-bar"><span>{time}</span><span>APCityPrayaanam • 4G</span></div>
 
         <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -227,29 +596,29 @@ export default function EPass() {
 
         <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 130px)' }}>
 
-          {/* Dynamic banner — updates on approval */}
-          <div style={{ 
-            margin: 14, 
-            background: passStatus === 'active' ? '#E8F5E9' : passStatus === 'rejected' ? '#FDECEA' : '#E8F5E9', 
-            border: `1.5px solid ${passStatus === 'active' ? 'var(--green)' : passStatus === 'rejected' ? '#C0392B' : 'var(--green)'}`, 
-            borderRadius: 12, padding: 16, textAlign: 'center' 
+          <div style={{
+            margin: 14,
+            background: passStatus === 'rejected' ? '#FDECEA' : '#E8F5E9',
+            border: `1.5px solid ${passStatus === 'rejected' ? '#C0392B' : 'var(--green)'}`,
+            borderRadius: 12, padding: 16, textAlign: 'center',
           }}>
             <div style={{ fontSize: 40, marginBottom: 8 }}>
               {passStatus === 'active' ? '🎉' : passStatus === 'rejected' ? '❌' : '✅'}
             </div>
-            <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700, 
-                         color: passStatus === 'active' ? 'var(--green)' : passStatus === 'rejected' ? '#C0392B' : 'var(--green)', 
-                         marginBottom: 6 }}>
-              {passStatus === 'active' ? 'ePass Approved! Ready to Use.' : 
-               passStatus === 'rejected' ? 'Application Rejected' :
-               'Application Submitted Successfully!'}
+            <div style={{
+              fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700,
+              color: passStatus === 'rejected' ? '#C0392B' : 'var(--green)', marginBottom: 6,
+            }}>
+              {passStatus === 'active' ? 'ePass Approved — Card Issued'
+                : passStatus === 'rejected' ? 'Application Rejected'
+                : 'Submitted — Documents Under Verification'}
             </div>
             <div style={{ fontSize: 13, color: passStatus === 'rejected' ? '#C0392B' : '#2E7D32', lineHeight: 1.6 }}>
-              {passStatus === 'active' 
-                ? `Your ePass was approved at ${approvedAt}. Show the QR code below to the conductor to board any city bus.`
+              {passStatus === 'active'
+                ? `Approved at ${approvedAt}. Your ID card is ready under "View My ePass".`
                 : passStatus === 'rejected'
-                ? 'Your application was rejected by the depot manager. Please check your details and apply again.'
-                : 'Your ePass application is waiting for approval at the Depot Manager login. This page updates automatically every 10 seconds.'}
+                ? (rejectionReason || 'The depot manager could not verify your documents.')
+                : 'The depot manager is checking your photo, Aadhaar and institution ID. This page updates automatically.'}
             </div>
           </div>
 
@@ -259,45 +628,37 @@ export default function EPass() {
               <span>Application Status</span>
               {passStatus === 'pending' && (
                 <span style={{ fontSize: 10, color: '#4CAF50', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span className="live-dot" style={{ width: 6, height: 6 }}/>
-                  Checking every 10s
+                  <span className="live-dot" style={{ width: 6, height: 6 }}/> Live
                 </span>
               )}
             </div>
             {[
-              { 
-                label: 'Application submitted', 
-                sub: `${time} today`, 
-                done: true,
-                current: false
-              },
-              { 
-                label: passStatus === 'active' ? 'Approved by Depot Manager' : 
-                       passStatus === 'rejected' ? 'Rejected by Depot Manager' :
-                       'Waiting for Depot Manager approval', 
-                sub: passStatus === 'active' ? `Approved at ${approvedAt} — Madhurawada Depot` :
-                     passStatus === 'rejected' ? `Rejected at ${approvedAt} — check SMS for reason` :
-                     'Madhurawada Depot — Visakhapatnam',
+              { label: 'Application + documents submitted', sub: `${time} today`, done: true, current: false },
+              {
+                label: passStatus === 'active' ? 'Documents verified by Depot Manager'
+                  : passStatus === 'rejected' ? 'Rejected by Depot Manager'
+                  : 'Document verification in progress',
+                sub: passStatus === 'active' ? `Photo, Aadhaar & ID checked at ${approvedAt}`
+                  : passStatus === 'rejected' ? (rejectionReason || 'See reason above')
+                  : 'Madhurawada Depot — Visakhapatnam',
                 done: passStatus === 'active' || passStatus === 'rejected',
                 current: passStatus === 'pending',
                 rejected: passStatus === 'rejected',
               },
-              { 
-                label: passStatus === 'active' ? 'ePass activated — QR code is live' : 'ePass will be activated', 
-                sub: passStatus === 'active' ? 'Scan the QR code above to board any city bus' : 'QR code activates after depot manager approval',
-                done: passStatus === 'active',
-                current: false
+              {
+                label: passStatus === 'active' ? 'ID card issued — QR is live' : 'ID card will be issued',
+                sub: passStatus === 'active' ? 'Show the card QR to the conductor' : 'Card generates after verification',
+                done: passStatus === 'active', current: false,
               },
             ].map((step: any, i, arr) => (
-              <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', paddingBottom: i < arr.length - 1 ? 0 : 4 }}>
+              <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 24 }}>
                   <div style={{
                     width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
                     background: step.rejected ? '#C0392B' : step.done ? 'var(--green)' : step.current ? 'var(--gold)' : '#E2E8F0',
                     border: `2px solid ${step.rejected ? '#C0392B' : step.done ? 'var(--green)' : step.current ? 'var(--gold)' : '#D1DCF0'}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 11, color: step.done ? 'white' : step.current ? 'var(--blue)' : 'var(--mute)',
-                    fontWeight: 700,
+                    fontSize: 11, color: step.done ? 'white' : step.current ? 'var(--blue)' : 'var(--mute)', fontWeight: 700,
                   }}>
                     {step.rejected ? '✗' : step.done ? '✓' : step.current ? '⏳' : '○'}
                   </div>
@@ -315,113 +676,49 @@ export default function EPass() {
             ))}
           </div>
 
-          {/* Application details */}
+          {/* Documents submitted */}
           <div style={{ margin: '0 14px 12px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
-              Application Details
+              Submitted for Verification
             </div>
             {[
               ['Applicant', form.fullName],
-              ['Pass Type', form.passType.charAt(0).toUpperCase() + form.passType.slice(1) + ' Pass'],
-              ['Route/Zone', form.route],
+              ['Date of Birth', `${fmtDate(form.dob)}${age !== null ? ` (${age} yrs)` : ''}`],
+              ['Organisation / Institution', form.institution],
+              ['Pass Type', (PASS_LABEL[form.passType]?.en || form.passType)],
+              ['Zone', form.zone],
               ['Amount', getAmountLabel()],
-              ['Payment', form.payment === 'upi_autopay' ? 'UPI Autopay' : 'UPI One-time'],
+              ['Photo', photoFile ? '✓ Uploaded' : '—'],
+              ['Aadhaar proof', aadhaarFile ? '✓ Uploaded' : '—'],
+              ['Institution / Org ID', idFile ? '✓ Uploaded' : 'Not submitted'],
             ].map(([label, value]) => (
-              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #F0F4FA' }}>
-                <span style={{ fontSize: 12, color: 'var(--mute)' }}>{label}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{value}</span>
+              <div key={label as string} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', borderBottom: '1px solid #F0F4FA' }}>
+                <span style={{ fontSize: 12, color: 'var(--mute)', flexShrink: 0 }}>{label}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textAlign: 'right' }}>{value}</span>
               </div>
             ))}
           </div>
 
-          {/* QR CODE section */}
-          <div style={{ margin: '0 14px 12px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)', textAlign: 'center' }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 14 }}>
-              Your ePass QR Code
-            </div>
-
-            {/* QR visual */}
-            <div style={{
-              display: 'inline-block', padding: 12, background: 'white',
-              border: '2px solid var(--blue)', borderRadius: 12,
-              boxShadow: '0 4px 16px rgba(27,58,107,0.12)', marginBottom: 10,
-            }}>
-              <QRCode value={submittedPassId || 'PENDING'} size={140} />
-            </div>
-
-            {/* Dynamic status badge — updates when depot manager approves */}
-            {passStatus === 'active' ? (
-              <div style={{
-                display: 'inline-block', background: '#E8F5E9', color: '#1A7A4A',
-                border: '1.5px solid #4CAF50', borderRadius: 20, fontSize: 11,
-                fontWeight: 700, padding: '4px 14px', marginBottom: 10, marginLeft: 8,
-              }}>
-                ✅ APPROVED — PASS ACTIVE
-              </div>
-            ) : passStatus === 'rejected' ? (
-              <div style={{
-                display: 'inline-block', background: '#FDECEA', color: '#C0392B',
-                border: '1.5px solid #EF9A9A', borderRadius: 20, fontSize: 11,
-                fontWeight: 700, padding: '4px 14px', marginBottom: 10, marginLeft: 8,
-              }}>
-                ✗ APPLICATION REJECTED
-              </div>
-            ) : (
-              <div style={{
-                display: 'inline-block', background: '#FFF3E0', color: '#E65100',
-                border: '1.5px solid #FFB74D', borderRadius: 20, fontSize: 11,
-                fontWeight: 700, padding: '4px 14px', marginBottom: 10, marginLeft: 8,
-              }}>
-                ⏳ PENDING APPROVAL
-              </div>
-            )}
-
-            <div style={{ marginTop: 6 }}>
-              <div style={{
-                fontFamily: 'Rajdhani,sans-serif', fontSize: 16, fontWeight: 700,
-                color: 'var(--blue)', letterSpacing: 0.5,
-              }}>
-                e-Pass
-              </div>
-              <div style={{
-                fontFamily: 'monospace', fontSize: 13, color: 'var(--text)',
-                fontWeight: 600, marginTop: 3, letterSpacing: 0.5,
-              }}>
-                {submittedPassId}
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--mute)', marginTop: 4 }}>
-                This QR will activate once the Depot Manager approves your application.
-                Show this QR to the conductor after approval.
-              </div>
-            </div>
-          </div>
-
-          {/* Action buttons */}
           <div style={{ padding: '0 14px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button className="btn-primary" onClick={() => nav('/')}>
-              ← Back to Home
+            <button className="btn-primary" onClick={() => setScreen('view')}>
+              {passStatus === 'active' ? 'View My ID Card' : 'View My ePass'}
             </button>
             <button style={{
               width: '100%', padding: 12, background: 'var(--light)', color: 'var(--blue)',
               border: '1.5px solid var(--blue)', borderRadius: 10, fontFamily: 'Rajdhani,sans-serif',
               fontSize: 15, fontWeight: 700, cursor: 'pointer',
-            }} onClick={() => setScreen('view')}>
-              View My ePass
-            </button>
+            }} onClick={() => nav('/')}>← Back to Home</button>
           </div>
         </div>
       </div>
     )
   }
 
-  // ── APPLY SCREEN ────────────────────────────────────────────────────────────
+  // ══ APPLY SCREEN ═════════════════════════════════════════════════════════════
   if (screen === 'apply') {
     return (
       <div className="phone-shell screen-enter">
-        <div className="status-bar">
-          <span>{time}</span>
-          <span>APCityPrayaanam • 4G</span>
-        </div>
+        <div className="status-bar"><span>{time}</span><span>APCityPrayaanam • 4G</span></div>
 
         <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -429,106 +726,183 @@ export default function EPass() {
               width: 30, height: 30, borderRadius: '50%', background: 'rgba(255,255,255,0.15)',
               border: 'none', color: 'white', fontSize: 16, cursor: 'pointer',
             }}>←</button>
-            <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700, color: 'white' }}>
-              Register New ePass
+            <div>
+              <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 18, fontWeight: 700, color: 'white' }}>
+                Register New ePass
+              </div>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.65)' }}>కొత్త ఈ-పాస్ నమోదు</div>
             </div>
           </div>
         </div>
 
         <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 130px)' }}>
+
+          {/* ── Section 1: Identity ── */}
           <div style={{ margin: 14, background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>
-              Self-Registration — No Counter Visit Needed
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>
+              1 · Applicant Details
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--mute)', marginBottom: 14 }}>
+              దరఖాస్తుదారు వివరాలు — no counter visit needed
             </div>
 
-            {/* Full Name */}
             <div style={{ marginBottom: 12 }}>
-              <label className="form-label">Full Name (as per Aadhaar)</label>
+              <label className="form-label">Full Name (as per Aadhaar) <span style={{ color: 'var(--red)' }}>*</span></label>
               <input type="text" className="form-input" value={form.fullName}
                 onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))} />
             </div>
 
-            {/* Aadhaar + Mobile */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
               <div>
-                <label className="form-label">Aadhaar (12 Digits)</label>
-                <input type="number" className="form-input" placeholder="XXXX XXXX XXXX"
-                  value={form.aadhaar} onChange={e => setForm(f => ({ ...f, aadhaar: e.target.value }))} />
+                <label className="form-label">Aadhaar (12 Digits) <span style={{ color: 'var(--red)' }}>*</span></label>
+                <input type="tel" inputMode="numeric" maxLength={12} className="form-input" placeholder="XXXX XXXX XXXX"
+                  value={form.aadhaar}
+                  onChange={e => setForm(f => ({ ...f, aadhaar: e.target.value.replace(/\D/g, '').slice(0, 12) }))} />
               </div>
               <div>
-                <label className="form-label">Mobile (10 Digits)</label>
-                <input type="tel" className="form-input" value={form.mobile}
-                  onChange={e => setForm(f => ({ ...f, mobile: e.target.value }))} />
+                <label className="form-label">Mobile (10 Digits) <span style={{ color: 'var(--red)' }}>*</span></label>
+                <input type="tel" inputMode="numeric" maxLength={10} className="form-input" value={form.mobile}
+                  onChange={e => setForm(f => ({ ...f, mobile: e.target.value.replace(/\D/g, '').slice(0, 10) }))} />
               </div>
             </div>
 
-            {/* Pass Type */}
             <div style={{ marginBottom: 12 }}>
-              <label className="form-label">Pass Type</label>
-              <select className="form-input" value={form.passType} onChange={e => setForm(f => ({ ...f, passType: e.target.value }))}>
+              <label className="form-label">Date of Birth · పుట్టిన తేదీ <span style={{ color: 'var(--red)' }}>*</span></label>
+              <input type="date" className="form-input" value={form.dob}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={e => setForm(f => ({ ...f, dob: e.target.value }))} />
+              {age !== null && (
+                <div style={{ fontSize: 10, color: age >= 60 ? 'var(--green)' : 'var(--mute)', marginTop: 3 }}>
+                  Age {age} years{age >= 60 ? ' — eligible for Senior Citizen pass' : ''}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="form-label">Organisation / Institution <span style={{ color: 'var(--red)' }}>*</span></label>
+              <input type="text" className="form-input" value={form.institution}
+                placeholder="Department, company or college name"
+                onChange={e => setForm(f => ({ ...f, institution: e.target.value }))} />
+              <div style={{ fontSize: 10, color: 'var(--mute)', marginTop: 3 }}>
+                This is printed on the ID card — enter the name exactly as on your office/college ID.
+              </div>
+            </div>
+          </div>
+
+          {/* ── Section 2: Documents ── */}
+          <div style={{ margin: '0 14px 14px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 2 }}>
+              2 · Photo &amp; Proof Documents
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--mute)', marginBottom: 14 }}>
+              ఫోటో మరియు ధ్రువీకరణ పత్రాలు — verified by the depot manager before issue
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <UploadTile
+                label="Passport-style Photo · ఫోటో"
+                sublabel="Plain background, face clearly visible. Printed on the pass."
+                required accept="image/*" capture="user"
+                file={photoFile} preview={photoPrev}
+                onPick={pickWithPreview(setPhotoFile, setPhotoPrev)}
+              />
+              <UploadTile
+                label="Aadhaar Card · ఆధార్ కార్డు"
+                sublabel="Front side image or PDF. Only the last 4 digits are stored."
+                required accept="image/*,application/pdf" capture="environment"
+                file={aadhaarFile} preview={aadhaarPrev}
+                onPick={pickWithPreview(setAadhaarFile, setAadhaarPrev)}
+              />
+              <UploadTile
+                label={form.passType === 'student'
+                  ? 'College / Institution ID · కళాశాల ఐడీ'
+                  : 'Organisation / Employer ID · సంస్థ ఐడీ'}
+                sublabel={idDocRequired
+                  ? 'Mandatory for this pass type — must show name and validity.'
+                  : 'Optional for a general pass, but speeds up verification.'}
+                required={idDocRequired} accept="image/*,application/pdf" capture="environment"
+                file={idFile} preview={idPrev}
+                onPick={pickWithPreview(setIdFile, setIdPrev)}
+              />
+            </div>
+
+            <div style={{ background: '#FFF8E1', border: '1px solid #FFD54F', borderRadius: 8, padding: '9px 11px', marginTop: 12 }}>
+              <div style={{ fontSize: 11, color: '#78550A', lineHeight: 1.5 }}>
+                🔒 Documents are used only for one-time verification by the depot manager and are
+                not shown on your pass. Your full Aadhaar number is never stored.
+              </div>
+            </div>
+          </div>
+
+          {/* ── Section 3: Pass configuration ── */}
+          <div style={{ margin: '0 14px 14px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>
+              3 · Pass &amp; Payment
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label">Pass Type · పాస్ రకం</label>
+              <select className="form-input" value={form.passType}
+                onChange={e => setForm(f => ({ ...f, passType: e.target.value }))}>
                 <option value="monthly">Monthly Pass — ₹350</option>
                 <option value="daily">Daily Pass — ₹50</option>
                 <option value="student">Student Pass — ₹150</option>
                 <option value="senior">Senior Citizen Pass — ₹175</option>
               </select>
+              {form.passType === 'senior' && age !== null && age < 60 && (
+                <div style={{ fontSize: 10, color: 'var(--red)', marginTop: 4 }}>
+                  ⚠ Age {age} — Senior Citizen pass requires 60 years or above.
+                </div>
+              )}
             </div>
 
-            {/* Route */}
             <div style={{ marginBottom: 12 }}>
-              <label className="form-label">Route / Zone</label>
-              <select className="form-input" value={form.route} onChange={e => setForm(f => ({ ...f, route: e.target.value }))}>
-                <option>Visakhapatnam — All Routes</option>
-                <option>Visakhapatnam — City Zone (North)</option>
-                <option>Visakhapatnam — City Zone (South)</option>
-                <option>900R — RTC Complex to Rushikonda only</option>
-                <option>400 — RTC Complex to Gajuwaka only</option>
-                <option>38J — RTC Complex to Janata Colony only</option>
+              <label className="form-label">Zone of Validity · జోన్</label>
+              <select className="form-input" value={form.zone}
+                onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}>
+                {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
               </select>
-            </div>
-
-            {/* CFMS ID */}
-            <div style={{ marginBottom: 12 }}>
-              <label className="form-label">CFMS / Student ID</label>
-              <input type="text" className="form-input" value={form.cfmsId}
-                onChange={e => setForm(f => ({ ...f, cfmsId: e.target.value }))} />
               <div style={{ fontSize: 10, color: 'var(--mute)', marginTop: 3 }}>
-                Comprehensive Financial Management System ID for AP govt employees
+                The pass is valid on every city service inside the selected zone.
               </div>
             </div>
 
-            {/* Org name */}
             <div style={{ marginBottom: 12 }}>
-              <label className="form-label">Organization / College Name</label>
-              <input type="text" className="form-input" value={form.orgName}
-                onChange={e => setForm(f => ({ ...f, orgName: e.target.value }))} />
+              <label className="form-label">CFMS / Student Roll No.</label>
+              <input type="text" className="form-input" value={form.cfmsId}
+                onChange={e => setForm(f => ({ ...f, cfmsId: e.target.value }))} />
             </div>
 
-            {/* Payment */}
-            <div style={{ marginBottom: 16 }}>
+            <div>
               <label className="form-label">Payment Method</label>
-              <select className="form-input" value={form.payment} onChange={e => setForm(f => ({ ...f, payment: e.target.value }))}>
+              <select className="form-input" value={form.payment}
+                onChange={e => setForm(f => ({ ...f, payment: e.target.value }))}>
                 <option value="upi_autopay">UPI Autopay (auto-renew monthly)</option>
                 <option value="upi_onetime">UPI One-time</option>
                 <option value="net_banking">Net Banking</option>
               </select>
             </div>
+          </div>
 
-            {/* Verification note */}
-            <div style={{ background: '#FFF8E1', border: '1px solid #FFD54F', borderRadius: 8, padding: '10px 12px', marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#9A6700', marginBottom: 3 }}>
-                ⏰ 24-Hour Online Verification
-              </div>
-              <div style={{ fontSize: 11, color: '#78550A' }}>
-                Monthly passes require online verification. Your pass will be activated within 24 hours.
-              </div>
-            </div>
-
+          {/* ── Submit ── */}
+          <div style={{ margin: '0 14px 20px' }}>
+            {formError && (
+              <div style={{
+                background: '#FDECEA', border: '1px solid #EF9A9A', borderRadius: 8,
+                padding: '10px 12px', fontSize: 12, color: '#C0392B', marginBottom: 10, lineHeight: 1.5,
+              }}>⚠ {formError}</div>
+            )}
+            {submitting && uploadMsg && (
+              <div style={{
+                background: 'var(--light)', borderRadius: 8, padding: '10px 12px',
+                fontSize: 12, color: 'var(--blue)', marginBottom: 10, fontWeight: 600,
+              }}>⏳ {uploadMsg}</div>
+            )}
             <button className="btn-teal" onClick={handleSubmit} disabled={submitting}>
-              {submitting ? 'Submitting...' : '✓ SUBMIT FOR VERIFICATION'}
+              {submitting ? 'Submitting…' : '✓ SUBMIT FOR VERIFICATION'}
             </button>
-
-            <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--mute)', marginTop: 10 }}>
-              Pass issued after Aadhaar OTP verification & Depot Manager approval.
+            <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--mute)', marginTop: 10, lineHeight: 1.5 }}>
+              Total payable {getAmountLabel()} · charged only after the depot manager approves your documents.
             </div>
           </div>
         </div>
@@ -536,18 +910,18 @@ export default function EPass() {
     )
   }
 
-  // ── VIEW / ACTIVE PASS SCREEN ───────────────────────────────────────────────
+  // ══ VIEW / ID CARD ═══════════════════════════════════════════════════════════
   return (
     <div className="phone-shell screen-enter">
-      <div className="status-bar">
-        <span>{time}</span>
-        <span>APCityPrayaanam • 4G</span>
-      </div>
+      <div className="status-bar"><span>{time}</span><span>APCityPrayaanam • 4G</span></div>
 
       <div style={{ background: 'var(--blue)', padding: '0 16px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, paddingBottom: 10 }}>
-          <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: 700, color: 'white' }}>
-            My ePass
+          <div>
+            <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: 700, color: 'white' }}>
+              My ePass
+            </div>
+            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>నా ఈ-పాస్</div>
           </div>
           <span style={{
             background: existingPass ? '#4CAF50' : '#F5A623',
@@ -562,59 +936,22 @@ export default function EPass() {
       <div className="scrollable" style={{ maxHeight: 'calc(100dvh - 130px)' }}>
 
         {existingPass ? (
-          /* Active pass card */
-          <div style={{
-            margin: 14, background: 'linear-gradient(135deg, var(--blue) 0%, #1A4A9A 100%)',
-            borderRadius: 16, padding: 20, color: 'white',
-            boxShadow: '0 8px 24px rgba(27,58,107,0.3)', position: 'relative', overflow: 'hidden',
-          }}>
-            <div style={{ position: 'absolute', top: -30, right: -30, width: 120, height: 120, borderRadius: '50%', background: 'rgba(255,255,255,0.06)' }} />
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-              <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 14, fontWeight: 700, opacity: 0.7 }}>AP TRANSIT</div>
-              <div style={{ background: 'var(--gold)', color: 'var(--blue)', fontSize: 10, fontWeight: 700, padding: '3px 10px', borderRadius: 20 }}>
-                MONTHLY PASS
-              </div>
+          <>
+            <PassIdCard pass={existingPass} />
+            <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--mute)', margin: '-4px 14px 14px' }}>
+              Tap the card to see zone, date of birth and conditions of use.
             </div>
-            <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 22, fontWeight: 700, marginBottom: 2 }}>
-              {existingPass.holder_name}
-            </div>
-            <div style={{ fontSize: 11, opacity: 0.6, marginBottom: 14 }}>Pass ID: {existingPass.pass_id}</div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-              {[
-                ['Route', existingPass.route],
-                ['Valid Until', existingPass.valid_until],
-                ['Pass Type', 'Monthly — Ordinary'],
-                ['Auto-renewal', '✓ UPI Active'],
-              ].map(([label, value]) => (
-                <div key={label}>
-                  <div style={{ fontSize: 10, opacity: 0.6, marginBottom: 2 }}>{label}</div>
-                  <div style={{ fontSize: 12, fontWeight: 600 }}>{value}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-              <div>
-                <div style={{ fontSize: 10, opacity: 0.6 }}>Aadhaar Verified ✓</div>
-                <div style={{ fontSize: 10, opacity: 0.6, marginTop: 2 }}>Next renewal: auto via UPI</div>
-              </div>
-              <div style={{ background: 'white', borderRadius: 8, padding: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <QRCode value={existingPass.pass_id} size={64} />
-              </div>
-            </div>
-          </div>
+          </>
         ) : (
           <div style={{ margin: 14, background: 'white', borderRadius: 12, padding: 20, boxShadow: 'var(--shadow)', textAlign: 'center' }}>
             <div style={{ fontSize: 40, marginBottom: 10 }}>🪪</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>No Active ePass</div>
             <div style={{ fontSize: 13, color: 'var(--mute)', marginBottom: 16 }}>
-              Register for a monthly bus pass to travel without buying tickets every day.
+              Register for a city bus pass to travel without buying tickets every day.
             </div>
           </div>
         )}
 
-        {/* Register new pass section */}
         <div style={{ padding: '0 14px 6px', fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
           {existingPass ? 'Manage Pass' : 'Register New ePass'}
         </div>
@@ -624,20 +961,19 @@ export default function EPass() {
             + APPLY FOR NEW ePASS
           </button>
           <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--mute)', marginTop: 10 }}>
-            No counter visit needed · Aadhaar OTP verification · UPI payment
+            Photo + Aadhaar + institution ID · verified by depot manager · UPI payment
           </div>
         </div>
 
-        {/* Benefits */}
         <div style={{ margin: '0 14px 20px', background: 'white', borderRadius: 12, padding: 16, boxShadow: 'var(--shadow)' }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
             Pass Benefits
           </div>
           {[
-            ['💰', 'Save up to 40% vs daily tickets', 'Monthly pass at ₹350 vs ₹600+ daily fare'],
-            ['🔄', 'Auto-renewal via UPI', 'Never miss renewal — auto-deduct 3 days before expiry'],
-            ['📱', 'Digital QR — no physical card', 'Show QR on phone to conductor for instant validation'],
-            ['🪪', 'Aadhaar-linked identity', 'Lost phone? Re-generate QR instantly after Aadhaar verify'],
+            ['🪪', 'Photo ID card on your phone', 'Conductor verifies face, name and validity in one look'],
+            ['💰', 'Save up to 40% vs daily tickets', 'Monthly pass at ₹350 vs ₹600+ in daily fares'],
+            ['🔄', 'Auto-renewal via UPI', 'Auto-deducts 3 days before expiry — no lapse'],
+            ['📱', 'No counter visit, no physical card', 'Apply, upload proofs and get approved from home'],
           ].map(([icon, title, sub]) => (
             <div key={title as string} style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'flex-start' }}>
               <span style={{ fontSize: 20, flexShrink: 0 }}>{icon}</span>
@@ -648,10 +984,8 @@ export default function EPass() {
             </div>
           ))}
         </div>
-
       </div>
 
-      {/* Bottom nav */}
       <div className="bottom-nav">
         {[['🏠','Home','/'],['🚌','Buses','/buses'],['🪪','ePass','/epass'],['⏰','Timetable','/timetable'],['👤','Profile','/profile']].map(([icon, label, path], i) => (
           <button key={i} className={`nav-item${path === '/epass' ? ' active' : ''}`} onClick={() => nav(path as string)}>
