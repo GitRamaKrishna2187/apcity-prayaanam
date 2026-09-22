@@ -253,7 +253,7 @@ export default function Profile() {
 
       {/* Bottom nav */}
       <div className="bottom-nav">
-        {([['🏠','Home','/'],['🚌','Buses','/buses'],['🪪','ePass','/epass'],['⏰','Timetable','/timetable'],['👤','Profile','/profile']] as [string,string,string][]).map(([icon,label,path],i) => (
+        {([['🏠','Home','/'],['🚌','Buses','/buses'],['🎟️','Ticket','/tickets'],['🪪','ePass','/epass'],['⏰','Timetable','/timetable'],['👤','Profile','/profile']] as [string,string,string][]).map(([icon,label,path],i) => (
           <button key={i} className={`nav-item${path==='/profile'?' active':''}`} onClick={()=>nav(path)}>
             <div className="nav-icon">{icon}</div>
             {path==='/profile'&&<div className="nav-dot"/>}
