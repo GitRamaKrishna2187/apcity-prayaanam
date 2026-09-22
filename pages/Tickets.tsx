@@ -100,21 +100,39 @@ function StopField({ label, labelTe, value, onChange, dotColor, dotLetter }: {
 }
 
 // ── The issued ticket, as a card ─────────────────────────────────────────────
+// A ticket is live only while it is 'issued' AND inside its window. The status
+// alone is not enough: a ticket nobody scanned stays 'issued' in the table until
+// the cron sweep runs, and rotating a code for it in the meantime shows a
+// credential as usable after it has stopped being valid.
+function isLive(t: any) {
+  return t.status === 'issued' && (!t.valid_until || new Date(t.valid_until) > new Date())
+}
+
 function TicketCard({ t }: { t: any }) {
-  const { code, remaining, unsupported } = useRotatingCode(
-    t.status === 'issued' ? t.qr_secret : null)
+  // The server also withholds qr_secret for anything not live, so this is belt
+  // and braces rather than the only guard.
+  const { code, remaining, unsupported } = useRotatingCode(isLive(t) ? t.qr_secret : null)
   const style = TYPE_STYLE[t.bus_type] || TYPE_STYLE.city_ordinary
-  const used = t.status === 'used'
-  const expired = t.status === 'issued' && t.valid_until && new Date(t.valid_until) < new Date()
+
+  const onBoard   = t.status === 'used'
+  const completed = t.status === 'completed'
+  const expired   = t.status === 'expired' ||
+                    (t.status === 'issued' && t.valid_until && new Date(t.valid_until) < new Date())
+  const done      = onBoard || completed || expired
+
+  const state = completed ? { label: 'TRAVEL COMPLETED', te: 'ప్రయాణం పూర్తయింది', bg: '#5A6B85', icon: '🏁' }
+    : onBoard  ? { label: 'ON BOARD',  te: 'ప్రయాణంలో',      bg: '#1A7A4A', icon: '🚌' }
+    : expired  ? { label: 'EXPIRED',   te: 'గడువు ముగిసింది', bg: '#7A8BA6', icon: '⌛' }
+    :            { label: 'VALID',     te: 'చెల్లుబాటు',      bg: 'var(--gold)', icon: '🎟️' }
 
   return (
     <div style={{
       margin: 14, background: 'white', borderRadius: 14, overflow: 'hidden',
       border: '1px solid #C9D6EC', boxShadow: '0 8px 24px rgba(13,43,94,0.16)',
-      opacity: used || expired ? 0.72 : 1,
+      opacity: completed || expired ? 0.7 : 1,
     }}>
       <div style={{
-        background: used || expired
+        background: completed || expired
           ? 'linear-gradient(135deg,#6B7A90,#8494A8)'
           : 'linear-gradient(135deg, var(--blue) 0%, #12305C 100%)',
         padding: '10px 14px', borderBottom: '3px solid var(--gold)',
@@ -127,11 +145,13 @@ function TicketCard({ t }: { t: any }) {
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)' }}>ఏపీఎస్ఆర్టీసీ ఈ-టికెట్</div>
         </div>
         <div style={{
-          background: used ? '#C0392B' : expired ? '#7A8BA6' : 'var(--gold)',
-          color: used || expired ? 'white' : 'var(--blue)',
-          fontSize: 10, fontWeight: 800, padding: '4px 9px', borderRadius: 4,
+          background: state.bg,
+          color: state.bg === 'var(--gold)' ? 'var(--blue)' : 'white',
+          fontSize: 9.5, fontWeight: 800, padding: '4px 9px', borderRadius: 4,
+          textAlign: 'right', lineHeight: 1.3,
         }}>
-          {used ? 'USED' : expired ? 'EXPIRED' : 'VALID'}
+          <div>{state.label}</div>
+          <div style={{ fontSize: 8, fontWeight: 600, opacity: 0.85 }}>{state.te}</div>
         </div>
       </div>
 
@@ -163,7 +183,9 @@ function TicketCard({ t }: { t: any }) {
             ['PASSENGERS', String(t.passengers)],
             ['DISTANCE', `${t.distance_km} km`],
             ['FARE PAID', `₹${t.total_fare}`],
-            [used ? 'USED AT' : 'VALID TILL', used ? fmtTime(t.used_at) : fmtTime(t.valid_until)],
+            completed ? ['ARRIVED ~', fmtTime(t.expected_arrival)]
+              : onBoard ? ['ARRIVING ~', fmtTime(t.expected_arrival)]
+              : ['VALID TILL', fmtTime(t.valid_until)],
           ].map(([l, v]) => (
             <div key={l} style={{ flex: 1 }}>
               <div style={{ fontSize: 7.5, color: 'var(--mute)', letterSpacing: 0.4 }}>{l}</div>
@@ -176,12 +198,12 @@ function TicketCard({ t }: { t: any }) {
           display: 'flex', alignItems: 'center', gap: 12,
           borderTop: '1px dashed #D8E1F0', paddingTop: 12,
         }}>
-          {used || expired ? (
+          {done ? (
             <div style={{
               width: 76, height: 76, borderRadius: 6, background: '#F4F6FA',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 26, flexShrink: 0,
-            }}>{used ? '✓' : '⌛'}</div>
+            }}>{completed ? '🏁' : onBoard ? '✓' : '⌛'}</div>
           ) : (
             <div style={{ position: 'relative', flexShrink: 0, padding: 3, background: 'white', border: '1px solid #D8E1F0', borderRadius: 6 }}>
               <QRCode value={`${t.ticket_no}|${code || '000000'}`} size={70} />
@@ -193,7 +215,7 @@ function TicketCard({ t }: { t: any }) {
             <div style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
               {t.ticket_no}
             </div>
-            {!used && !expired && (
+            {!done && (
               <div style={{
                 fontFamily: 'monospace', fontSize: 14, fontWeight: 700, letterSpacing: 2,
                 color: unsupported ? 'var(--red)' : 'var(--blue)', marginTop: 2,
@@ -206,17 +228,22 @@ function TicketCard({ t }: { t: any }) {
                 )}
               </div>
             )}
-            <div style={{ fontSize: 9.5, color: used ? 'var(--red)' : 'var(--mute)', marginTop: 3, lineHeight: 1.4 }}>
-              {used
-                ? `Scanned once — this ticket cannot be reused${t.used_bus ? ` (bus ${t.used_bus})` : ''}.`
+            <div style={{
+              fontSize: 9.5, marginTop: 3, lineHeight: 1.4,
+              color: completed ? 'var(--mute)' : onBoard ? 'var(--green)' : expired ? 'var(--mute)' : 'var(--mute)',
+            }}>
+              {completed
+                ? `Journey finished${t.used_bus ? ` on bus ${t.used_bus}` : ''}. Kept for your records.`
+                : onBoard
+                ? `Boarded at ${fmtTime(t.used_at)}${t.used_bus ? ` on bus ${t.used_bus}` : ''} — arriving around ${fmtTime(t.expected_arrival)}.`
                 : expired
-                ? 'The three-hour validity window has passed.'
+                ? 'Never boarded. The validity window closed.'
                 : 'Valid for one boarding only. The conductor scans this once.'}
             </div>
           </div>
         </div>
 
-        {!t.payment_verified && !used && (
+        {!t.payment_verified && !done && (
           <div style={{
             marginTop: 10, background: '#FFF8E1', border: '1px solid #FFD54F',
             borderRadius: 7, padding: '7px 10px', fontSize: 10, color: '#78550A', lineHeight: 1.5,
@@ -350,8 +377,7 @@ export default function Tickets() {
   }
 
   // ── My tickets ────────────────────────────────────────────────────────────
-  const openMyTickets = async () => {
-    setStep('list'); setBusy(true)
+  const refreshMyTickets = async () => {
     const creds: TicketCred[] = loadTicketCreds()
     const rows = await Promise.all(creds.map(async c => {
       const { data } = await supabase.rpc('get_my_ticket', {
@@ -359,9 +385,30 @@ export default function Tickets() {
       })
       return data?.[0] || null
     }))
-    setMyTickets(rows.filter(Boolean))
+    // Anything still in play first; finished journeys sink to the bottom.
+    const rank: Record<string, number> = { issued: 0, used: 1, completed: 2, expired: 3, cancelled: 4 }
+    const sorted = rows.filter(Boolean).sort((a: any, b: any) =>
+      (rank[a.status] ?? 9) - (rank[b.status] ?? 9) ||
+      new Date(b.issued_at || 0).getTime() - new Date(a.issued_at || 0).getTime())
+    setMyTickets(sorted)
+    return sorted
+  }
+
+  const openMyTickets = async () => {
+    setStep('list'); setBusy(true)
+    await refreshMyTickets()
     setBusy(false)
   }
+
+  // While a ticket is live or the passenger is on board, the wallet polls so the
+  // card retires itself at arrival instead of sitting there looking current.
+  useEffect(() => {
+    if (step !== 'list') return
+    const anyActive = myTickets.some((t: any) => t.status === 'issued' || t.status === 'used')
+    if (!anyActive) return
+    const i = setInterval(refreshMyTickets, 30000)
+    return () => clearInterval(i)
+  }, [step, myTickets])
 
   const Header = ({ title, te, back }: { title: string; te: string; back: () => void }) => (
     <div style={{ background: 'var(--blue)', padding: '14px 16px' }}>
@@ -432,7 +479,24 @@ export default function Tickets() {
               </div>
             </div>
           )}
-          {myTickets.map(t => <TicketCard key={t.ticket_no} t={t} />)}
+          {(() => {
+            const active = myTickets.filter((t: any) => t.status === 'issued' || t.status === 'used')
+            const past   = myTickets.filter((t: any) => !(t.status === 'issued' || t.status === 'used'))
+            const Heading = ({ text, te }: { text: string; te: string }) => (
+              <div style={{
+                padding: '4px 14px 2px', fontSize: 11, fontWeight: 700, color: 'var(--mute)',
+                textTransform: 'uppercase', letterSpacing: 0.5,
+              }}>{text} · <span style={{ textTransform: 'none', fontWeight: 600 }}>{te}</span></div>
+            )
+            return (
+              <>
+                {active.length > 0 && <Heading text="Active" te="ప్రస్తుతం" />}
+                {active.map((t: any) => <TicketCard key={t.ticket_no} t={t} />)}
+                {past.length > 0 && <Heading text="Past journeys" te="గత ప్రయాణాలు" />}
+                {past.map((t: any) => <TicketCard key={t.ticket_no} t={t} />)}
+              </>
+            )
+          })()}
           <div style={{ padding: '0 14px 20px' }}>
             <button className="btn-primary" onClick={() => setStep('search')}>+ Book a Ticket</button>
           </div>
