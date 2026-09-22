@@ -3,73 +3,8 @@ import type { CSSProperties, Dispatch, SetStateAction } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLang } from '../i18n/LanguageContext'
 import { supabase } from '../lib/supabase'
-import QRLib from 'qrcode'
-
-// ── QR code ──────────────────────────────────────────────────────────────────
-// This was previously a decorative pattern derived from a string hash — it
-// looked like a QR code and no scanner on earth could read it. It now encodes
-// a real payload: "<pass_id>|<rotating 6-digit code>".
-function QRCode({ value, size = 120 }: { value: string; size?: number }) {
-  const [svg, setSvg] = useState('')
-  useEffect(() => {
-    let alive = true
-    QRLib.toString(value, { type: 'svg', margin: 0, errorCorrectionLevel: 'M' })
-      .then(out => { if (alive) setSvg(out) })
-      .catch(() => { if (alive) setSvg('') })
-    return () => { alive = false }
-  }, [value])
-
-  if (!svg) return <div style={{ width: size, height: size, background: '#EDF1F8', borderRadius: 4 }} />
-  return (
-    <div
-      style={{ width: size, height: size, lineHeight: 0 }}
-      dangerouslySetInnerHTML={{
-        __html: svg.replace('<svg', `<svg width="${size}" height="${size}"`),
-      }}
-    />
-  )
-}
-
-// ── Rotating code (TOTP) ─────────────────────────────────────────────────────
-// Mirrors totp_code() in the database exactly: HMAC-SHA256 over the 30-second
-// step, first 8 bytes big-endian, AND 0x7FFFFFFF, mod 1e6. A screenshot of the
-// card is worthless roughly half a minute after it is taken.
-function useRotatingCode(secret: string | null | undefined) {
-  const [code, setCode] = useState('')
-  const [remaining, setRemaining] = useState(30)
-  const [unsupported, setUnsupported] = useState(false)
-
-  useEffect(() => {
-    if (!secret) { setCode(''); return }
-    if (!globalThis.crypto?.subtle) { setUnsupported(true); return }
-    let alive = true
-    let key: CryptoKey | null = null
-
-    async function tick() {
-      try {
-        if (!key) {
-          key = await crypto.subtle.importKey(
-            'raw', new TextEncoder().encode(secret!),
-            { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-        }
-        const nowSec = Math.floor(Date.now() / 1000)
-        const step = BigInt(Math.floor(nowSec / 30))
-        const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(step.toString()))
-        const hex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('')
-        const v = (BigInt('0x' + hex.slice(0, 16)) & 0x7FFFFFFFn) % 1000000n
-        if (!alive) return
-        setCode(v.toString().padStart(6, '0'))
-        setRemaining(30 - (nowSec % 30))
-      } catch { if (alive) setUnsupported(true) }
-    }
-
-    tick()
-    const i = setInterval(tick, 1000)
-    return () => { alive = false; clearInterval(i) }
-  }, [secret])
-
-  return { code, remaining, unsupported }
-}
+import { QRCode, useRotatingCode, CodeExpiryBar, loadCred, saveCred } from '../lib/credential'
+import type { Cred } from '../lib/credential'
 
 // ── Pass ID generator ─
 // ── Pass ID generator ──────────────────────────────────────────────────────────
@@ -89,22 +24,8 @@ function genPassId() {
   return `APTC-${yy}-VSP-${out}`
 }
 
-// ── Holder credentials (pass_id + access_token) ──────────────────────────────
-// Anon can no longer SELECT from epasses. The holder reads their own pass with
-// get_my_epass(pass_id, token); the token lives only in this browser.
-const CRED_KEY = 'apcp.epass.cred'
-type Cred = { passId: string; token: string }
-
-function loadCred(): Cred | null {
-  try {
-    const raw = localStorage.getItem(CRED_KEY)
-    return raw ? JSON.parse(raw) as Cred : null
-  } catch { return null }
-}
-function saveCred(c: Cred) {
-  try { localStorage.setItem(CRED_KEY, JSON.stringify(c)) } catch { /* private mode */ }
-}
-
+// Anon can no longer SELECT from epasses; the holder reads their own pass with
+// get_my_epass(pass_id, token) and the token lives only in this browser.
 async function fetchMyPass(cred: Cred | null) {
   if (!cred) return null
   const { data, error } = await supabase.rpc('get_my_epass', {
@@ -328,17 +249,7 @@ function PassIdCard({ pass }: { pass: any }) {
                 borderRadius: 5, padding: 3, flexShrink: 0, position: 'relative',
               }}>
                 <QRCode value={`${pass.pass_id}|${code || '000000'}`} size={54} />
-                {/* Expiry ring — the passenger can see the code is about to turn over */}
-                <div style={{
-                  position: 'absolute', left: 3, right: 3, bottom: -1, height: 2,
-                  background: '#E2E8F0', borderRadius: 2, overflow: 'hidden',
-                }}>
-                  <div style={{
-                    width: `${(remaining / 30) * 100}%`, height: '100%',
-                    background: remaining <= 5 ? 'var(--red)' : 'var(--green)',
-                    transition: 'width 1s linear',
-                  }} />
-                </div>
+                <CodeExpiryBar remaining={remaining} />
               </div>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ fontSize: 8, color: 'var(--mute)', letterSpacing: 0.4 }}>PASS ID · పాస్ ఐడీ</div>
@@ -1222,7 +1133,7 @@ export default function EPass() {
       </div>
 
       <div className="bottom-nav">
-        {[['🏠','Home','/'],['🚌','Buses','/buses'],['🪪','ePass','/epass'],['⏰','Timetable','/timetable'],['👤','Profile','/profile']].map(([icon, label, path], i) => (
+        {[['🏠','Home','/'],['🚌','Buses','/buses'],['🎟️','Ticket','/tickets'],['🪪','ePass','/epass'],['⏰','Timetable','/timetable'],['👤','Profile','/profile']].map(([icon, label, path], i) => (
           <button key={i} className={`nav-item${path === '/epass' ? ' active' : ''}`} onClick={() => nav(path as string)}>
             <div className="nav-icon">{icon}</div>
             {path === '/epass' && <div className="nav-dot" />}
