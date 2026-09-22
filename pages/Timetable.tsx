@@ -350,7 +350,7 @@ export default function Timetable() {
       </div>
 
       <div className="bottom-nav">
-        {([['🏠',t('home'),'/'],['🚌',t('buses'),'/buses'],['🪪',t('epass'),'/epass'],['⏰',t('timetable'),'/timetable'],['👤',t('profile'),'/profile']] as [string,string,string][]).map(([icon,label,path],i) => (
+        {([['🏠',t('home'),'/'],['🚌',t('buses'),'/buses'],['🎟️','Ticket','/tickets'],['🪪',t('epass'),'/epass'],['⏰',t('timetable'),'/timetable'],['👤',t('profile'),'/profile']] as [string,string,string][]).map(([icon,label,path],i) => (
           <button key={i} className={`nav-item${path==='/timetable'?' active':''}`} onClick={() => nav(path)}>
             <div className="nav-icon">{icon}</div>
             {path==='/timetable' && <div className="nav-dot"/>}
