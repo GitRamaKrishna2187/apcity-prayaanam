@@ -129,7 +129,10 @@
   background: none;
 }
 .nav-icon { font-size: 20px; }
-.nav-label { font-size: 10px; font-weight: 500; color: var(--mute); }
+.nav-label {
+  font-size: 9.5px; font-weight: 500; color: var(--mute);
+  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+}
 .nav-item.active .nav-label { color: var(--blue); }
 .nav-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--blue); }
 
