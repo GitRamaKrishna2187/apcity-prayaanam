@@ -561,7 +561,7 @@ export default function Buses() {
       </div>
 
       <div className="bottom-nav">
-        {[['🏠',t('home'),'/'],['🚌',t('buses'),'/buses'],['🪪',t('epass'),'/epass'],['⏰',t('timetable'),'/timetable'],['👤',t('profile'),'/profile']].map(([icon,label,path],i) => (
+        {[['🏠',t('home'),'/'],['🚌',t('buses'),'/buses'],['🎟️','Ticket','/tickets'],['🪪',t('epass'),'/epass'],['⏰',t('timetable'),'/timetable'],['👤',t('profile'),'/profile']].map(([icon,label,path],i) => (
           <button key={i} className={`nav-item${window.location.pathname===path?' active':''}`} onClick={() => nav(path)}>
             <div className="nav-icon">{icon}</div>
             {window.location.pathname===path && <div className="nav-dot"/>}
