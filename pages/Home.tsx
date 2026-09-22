@@ -229,13 +229,46 @@ export default function Home() {
       {/* SCROLLABLE CONTENT */}
       <div className="scrollable">
 
+        {/* Primary choice — ticket or pass. A single journey and a monthly pass
+            are different products for different passengers, so they get equal
+            weight here rather than one being buried in the quick-action row. */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, padding: '14px 14px 4px' }}>
+          {[
+            {
+              path: '/tickets', icon: '🎟️',
+              title: 'e-Ticket', te: 'ఈ-టికెట్',
+              sub: 'Single journey · pay by UPI',
+              bg: 'linear-gradient(135deg,#0B7A75 0%,#0F918B 100%)',
+            },
+            {
+              path: '/epass', icon: '🪪',
+              title: 'e-Pass', te: 'ఈ-పాస్',
+              sub: 'Monthly · student · senior',
+              bg: 'linear-gradient(135deg,#1B3A6B 0%,#12305C 100%)',
+            },
+          ].map(b => (
+            <button key={b.path} onClick={() => nav(b.path)} style={{
+              background: b.bg, border: 'none', borderRadius: 14, padding: '16px 14px',
+              textAlign: 'left', cursor: 'pointer', color: 'white',
+              boxShadow: '0 6px 18px rgba(13,43,94,0.18)',
+            }}>
+              <div style={{ fontSize: 26, marginBottom: 6 }}>{b.icon}</div>
+              <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 19, fontWeight: 700, letterSpacing: 0.4 }}>
+                {b.title}
+              </div>
+              <div style={{ fontSize: 10, opacity: 0.72, marginTop: -2 }}>{b.te}</div>
+              <div style={{ fontSize: 10.5, opacity: 0.85, marginTop: 6, lineHeight: 1.4 }}>{b.sub}</div>
+            </button>
+          ))}
+        </div>
+
         {/* Quick actions */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, padding: 14 }}>
           {[
-            { icon: '🪪', label: t('myEPass'),   path: '/epass' },
             { icon: '🚌', label: t('liveBuses'), path: '/buses' },
-            { icon: '📋', label: t('myTickets'), path: '/profile' },
+            { icon: '📋', label: t('myTickets'), path: '/tickets' },
             { icon: '⏰', label: t('timetable'), path: '/timetable' },
+            { icon: '👤', label: 'Profile',      path: '/profile' },
           ].map((a, i) => (
             <button key={i} onClick={() => nav(a.path)} style={{
               background: 'white', borderRadius: 12, padding: '12px 6px',
@@ -363,6 +396,7 @@ export default function Home() {
         {[
           { icon: '🏠', label: t('home'),      path: '/' },
           { icon: '🚌', label: t('buses'),     path: '/buses' },
+          { icon: '🎟️', label: 'Ticket',       path: '/tickets' },
           { icon: '🪪', label: t('epass'),     path: '/epass' },
           { icon: '⏰', label: t('timetable'), path: '/timetable' },
           { icon: '👤', label: t('profile'),   path: '/profile' },
