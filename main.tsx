@@ -7,6 +7,7 @@ import Home from './pages/Home'
 import Buses from './pages/Buses'
 import BusDetail from './pages/BusDetail'
 import EPass from './pages/EPass'
+import Tickets from './pages/Tickets'
 import Timetable from './pages/Timetable'
 import Profile from './pages/Profile'
 
@@ -25,6 +26,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           <Route path="/bus/:id"   element={<BusDetail />} />
 
           <Route path="/epass"     element={<EPass />} />
+          <Route path="/tickets"   element={<Tickets />} />
           <Route path="/timetable" element={<Timetable />} />
           <Route path="/profile"   element={<Profile />} />
           <Route path="*"          element={<Navigate to="/" replace />} />
