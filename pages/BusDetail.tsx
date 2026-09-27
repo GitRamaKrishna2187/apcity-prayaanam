@@ -20,8 +20,6 @@ interface BusRow {
   seats_occupied: number
   departure_time: string
   arrival_time: string
-  driver_name: string
-  driver_mobile: string
   delay_mins: number
 }
 
@@ -258,7 +256,7 @@ export default function BusDetail() {
       const [rRes, sRes, bRes] = await Promise.all([
         supabase.from('routes').select('*').eq('route_no', routeNo).single(),
         supabase.from('bus_stops').select('id,stop_name,stop_index,landmark').eq('route_no', routeNo).order('stop_index', { ascending: true }),
-        supabase.from('buses').select('id,registration,route_no,status,current_stop_index,seats_occupied,departure_time,arrival_time,driver_name,driver_mobile,delay_mins').eq('route_no', routeNo).order('departure_time', { ascending: true }),
+        supabase.from('buses').select('id,registration,route_no,status,current_stop_index,seats_occupied,departure_time,arrival_time,delay_mins').eq('route_no', routeNo).order('departure_time', { ascending: true }),
       ])
 
       if (rRes.data) setRoute(rRes.data)
@@ -370,8 +368,10 @@ export default function BusDetail() {
   const seatsLeft = capacity - occupied
 
   const baseFare  = Math.round(route.distance_km * (FARE_RATES[route.bus_type] || 2))
-  const resFee    = route.ac ? 20 : 10
-  const totalFare = baseFare + resFee
+  // The reservation fee was an app-side invention (no column backs it) and is
+  // no longer displayed, so it is out of the total too — otherwise the screen
+  // would show Base ₹54 and Total ₹64 with nothing accounting for the ₹10.
+  const totalFare = baseFare
 
   const statusMap: Record<string, { label: string; bg: string; color: string }> = {
     running:   { label: 'Running',   bg: '#E8F5E9', color: '#1A7A4A' },
@@ -626,7 +626,6 @@ export default function BusDetail() {
             { label: 'Distance', value: `${route.distance_km} km` },
             { label: 'Bus Type', value: `${BUS_TYPE_LABELS[route.bus_type]} (${route.ac ? 'A/C' : 'Non A/C'})` },
             { label: 'Base Fare', value: `₹ ${baseFare}` },
-            { label: route.ac ? 'A/C Reservation' : 'Reservation', value: `₹ ${resFee}` },
           ].map((row, i) => (
             <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid #F0F4FA' }}>
               <div style={{ fontSize: 13, color: 'var(--mute)' }}>{row.label}</div>
@@ -638,24 +637,6 @@ export default function BusDetail() {
             <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 24, fontWeight: 700, color: 'var(--blue)' }}>₹ {totalFare}</div>
           </div>
         </div>
-
-        {/* DRIVER */}
-        {selBus?.driver_name && (
-          <div style={{ background: 'white', margin: '0 14px 14px', borderRadius: 12, padding: 14, boxShadow: 'var(--shadow)' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--mute)', textTransform: 'uppercase' as const, letterSpacing: 0.5, marginBottom: 10 }}>
-              👨‍✈️ Driver Info
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{selBus.driver_name}</div>
-                <div style={{ fontSize: 12, color: 'var(--mute)', marginTop: 2 }}>Driver · {selBus.registration}</div>
-              </div>
-              <a href={`tel:${selBus.driver_mobile}`} style={{ background: 'var(--light)', color: 'var(--blue)', borderRadius: 8, padding: '6px 14px', fontSize: 12, fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-                📞 Call
-              </a>
-            </div>
-          </div>
-        )}
 
         <div style={{ height: 100 }} />
       </div>
