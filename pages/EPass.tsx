@@ -119,7 +119,29 @@ const ZONES = [
   'All Zones — Visakhapatnam City',
 ]
 
-const AMOUNTS: Record<string, number> = { monthly: 350, student: 150, senior: 175, daily: 50 }
+const AMOUNTS: Record<string, number> = {
+  monthly: 350, student: 150, senior: 175, daily: 50,
+  // A Stree Shakti pass is not a fare product. It buys nothing — it proves the
+  // holder qualifies for travel the State already funds, so a conductor does
+  // not re-verify Aadhaar on every boarding. Hence ₹0.
+  stree_shakti: 0,
+}
+
+const GENDERS = [
+  { v: 'female',      en: 'Female',      te: 'మహిళ' },
+  { v: 'male',        en: 'Male',        te: 'పురుషుడు' },
+  { v: 'transgender', en: 'Transgender', te: 'ట్రాన్స్‌జెండర్' },
+  { v: 'unspecified', en: 'Prefer not to say', te: 'చెప్పదలచుకోలేదు' },
+]
+
+// Beneficiary categories named in the Stree Shakti GO.
+const SS_ELIGIBLE = (g: string) => g === 'female' || g === 'transgender'
+
+// Stree Shakti covers Pallevelugu, Ultra Pallevelugu, City Ordinary, Metro
+// Express and Express services only. All AC products are excluded, so a
+// Stree Shakti pass cannot be sold as an "All Zones" product — the zone list
+// for it has to say what it does NOT cover.
+const SS_ZONE = 'All Zones — Visakhapatnam City (non-AC services only)'
 
 function ageFromDob(dob: string): number | null {
   if (!dob) return null
@@ -133,6 +155,7 @@ function ageFromDob(dob: string): number | null {
 }
 
 const PASS_LABEL: Record<string, { en: string; te: string }> = {
+  stree_shakti: { en: 'STREE SHAKTI', te: 'స్త్రీ శక్తి' },
   monthly: { en: 'MONTHLY', te: 'నెలవారీ' },
   daily:   { en: 'DAILY',   te: 'రోజువారీ' },
   student: { en: 'STUDENT', te: 'విద్యార్థి' },
@@ -310,6 +333,16 @@ function PassIdCard({ pass }: { pass: any }) {
               <div style={{ fontSize: 9, color: 'var(--green)', fontWeight: 600 }}>
                 ✓ Aadhaar verified · ends {pass.aadhaar_last4 || '****'}
               </div>
+              {pass.pass_type === 'stree_shakti' && (
+                <div style={{
+                  background: '#FFF3E0', border: '1px solid #FFB74D', borderRadius: 5,
+                  padding: '5px 8px', fontSize: 8.5, color: '#9A6700', lineHeight: 1.5, marginTop: 2,
+                }}>
+                  <b>NOT VALID ON AC SERVICES</b> · ఏసీ సర్వీసుల్లో చెల్లదు<br/>
+                  Free travel under Stree Shakti covers City Ordinary, Metro Express
+                  and Express services only.
+                </div>
+              )}
 
               <ol style={{ margin: '2px 0 0 14px', padding: 0, fontSize: 9, color: 'var(--text)', lineHeight: 1.65 }}>
                 <li>Valid only for the holder named overleaf. Non-transferable.<br/>
@@ -436,6 +469,7 @@ export default function EPass() {
     aadhaar: '',
     mobile: '9848032919',
     dob: '',
+    gender: 'unspecified',
     passType: 'monthly',
     zone: ZONES[4],
     cfmsId: '14815316',
@@ -473,6 +507,23 @@ export default function EPass() {
 
   const age = ageFromDob(form.dob)
   const idDocRequired = form.passType === 'student' || form.passType === 'senior'
+  const ssEligible = SS_ELIGIBLE(form.gender)
+  const isStreeShakti = form.passType === 'stree_shakti'
+
+  // Offer the free pass the moment an eligible category is declared, and drop
+  // back off it if the declaration changes — never leave a male applicant
+  // holding a Stree Shakti pass type.
+  useEffect(() => {
+    setForm(f => {
+      if (SS_ELIGIBLE(f.gender) && f.passType === 'monthly') {
+        return { ...f, passType: 'stree_shakti', zone: SS_ZONE }
+      }
+      if (!SS_ELIGIBLE(f.gender) && f.passType === 'stree_shakti') {
+        return { ...f, passType: 'monthly', zone: ZONES[4] }
+      }
+      return f
+    })
+  }, [form.gender])
 
   // ── Existing pass lookup ────────────────────────────────────────────────────
   useEffect(() => {
@@ -544,8 +595,13 @@ export default function EPass() {
     if (!/^\d{12}$/.test(form.aadhaar)) return 'Aadhaar number must be exactly 12 digits.'
     if (!/^\d{10}$/.test(form.mobile)) return 'Mobile number must be exactly 10 digits.'
     if (!form.dob) return 'Date of birth is required.'
+    if (form.gender === 'unspecified' && isStreeShakti)
+      return 'A Stree Shakti pass requires the beneficiary category to be declared.'
+    if (isStreeShakti && !ssEligible)
+      return 'Stree Shakti passes are issued to women and transgender applicants only.'
     if (age === null || age < 5 || age > 110) return 'Enter a valid date of birth.'
-    if (!form.institution.trim()) return 'Organisation / institution name is required.'
+    if (!isStreeShakti && !form.institution.trim())
+      return 'Organisation / institution name is required.'
     if (!photoFile) return 'A recent passport-style photo is required for the pass.'
     if (!aadhaarFile) return 'An Aadhaar card image or PDF is required.'
     const tooBig = [aadhaarFile, idFile].find(f => f && f.type === 'application/pdf' && f.size > 2_800_000)
@@ -589,11 +645,12 @@ export default function EPass() {
         aadhaar_last4: form.aadhaar.slice(-4),
         mobile: form.mobile,
         dob: form.dob,
+        gender: form.gender,
         pass_type: form.passType,
         zone: form.zone,
         cfms_id: form.cfmsId,
-        institution: form.institution.trim(),
-        org_name: form.institution.trim(),   // kept in sync for older readers
+        institution: form.institution.trim() || null,
+        org_name: form.institution.trim() || null,   // kept in sync for older readers
         photo_url: photoUrl,
         aadhaar_doc_url: aadhaarPath,
         id_doc_url: idPath,
@@ -915,8 +972,33 @@ export default function EPass() {
               )}
             </div>
 
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label">Gender · లింగం <span style={{ color: 'var(--red)' }}>*</span></label>
+              <select className="form-input" value={form.gender}
+                onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}>
+                {GENDERS.map(g => <option key={g.v} value={g.v}>{g.en} · {g.te}</option>)}
+              </select>
+              {ssEligible && (
+                <div style={{
+                  marginTop: 6, background: '#E8F5E9', border: '1px solid #A5D6A7',
+                  borderRadius: 7, padding: '8px 11px', fontSize: 11, color: '#1B5E20', lineHeight: 1.55,
+                }}>
+                  <b>స్త్రీ శక్తి — you already travel free.</b> Under the Stree Shakti
+                  scheme you pay nothing on City Ordinary, Metro Express and Express
+                  services. You do not need a paid pass for those.
+                  <div style={{ marginTop: 4, color: '#2E7D32' }}>
+                    A free Stree Shakti pass simply saves you showing Aadhaar to the
+                    conductor on every trip. Choose a paid pass only if you also travel
+                    on AC services, which the scheme does not cover.
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div>
-              <label className="form-label">Organisation / Institution <span style={{ color: 'var(--red)' }}>*</span></label>
+              <label className="form-label">
+                Organisation / Institution{!isStreeShakti && <span style={{ color: 'var(--red)' }}> *</span>}
+              </label>
               <input type="text" className="form-input" value={form.institution}
                 placeholder="Department, company or college name"
                 onChange={e => setForm(f => ({ ...f, institution: e.target.value }))} />
@@ -981,6 +1063,9 @@ export default function EPass() {
               <label className="form-label">Pass Type · పాస్ రకం</label>
               <select className="form-input" value={form.passType}
                 onChange={e => setForm(f => ({ ...f, passType: e.target.value }))}>
+                {ssEligible && (
+                  <option value="stree_shakti">Stree Shakti Pass — FREE (non-AC services)</option>
+                )}
                 <option value="monthly">Monthly Pass — ₹350</option>
                 <option value="daily">Daily Pass — ₹50</option>
                 <option value="student">Student Pass — ₹150</option>
@@ -995,12 +1080,16 @@ export default function EPass() {
 
             <div style={{ marginBottom: 12 }}>
               <label className="form-label">Zone of Validity · జోన్</label>
-              <select className="form-input" value={form.zone}
+              <select className="form-input" value={form.zone} disabled={isStreeShakti}
                 onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}>
-                {ZONES.map(z => <option key={z} value={z}>{z}</option>)}
+                {isStreeShakti
+                  ? <option value={SS_ZONE}>{SS_ZONE}</option>
+                  : ZONES.map(z => <option key={z} value={z}>{z}</option>)}
               </select>
-              <div style={{ fontSize: 10, color: 'var(--mute)', marginTop: 3 }}>
-                The pass is valid on every city service inside the selected zone.
+              <div style={{ fontSize: 10, color: isStreeShakti ? '#9A6700' : 'var(--mute)', marginTop: 3 }}>
+                {isStreeShakti
+                  ? '⚠ Not valid on AC services (Green Metro, 900, 900K) — the scheme excludes them.'
+                  : 'The pass is valid on every city service inside the selected zone.'}
               </div>
             </div>
 
@@ -1012,12 +1101,21 @@ export default function EPass() {
 
             <div>
               <label className="form-label">Payment Method</label>
-              <select className="form-input" value={form.payment}
-                onChange={e => setForm(f => ({ ...f, payment: e.target.value }))}>
-                <option value="upi_autopay">UPI Autopay (auto-renew monthly)</option>
-                <option value="upi_onetime">UPI One-time</option>
-                <option value="net_banking">Net Banking</option>
-              </select>
+              {isStreeShakti ? (
+                <div style={{
+                  background: '#E8F5E9', border: '1px solid #A5D6A7', borderRadius: 8,
+                  padding: '11px 13px', fontSize: 12, color: '#1B5E20', fontWeight: 600,
+                }}>
+                  No payment — issued free under Stree Shakti · చెల్లింపు అవసరం లేదు
+                </div>
+              ) : (
+                <select className="form-input" value={form.payment}
+                  onChange={e => setForm(f => ({ ...f, payment: e.target.value }))}>
+                  <option value="upi_autopay">UPI Autopay (auto-renew monthly)</option>
+                  <option value="upi_onetime">UPI One-time</option>
+                  <option value="net_banking">Net Banking</option>
+                </select>
+              )}
             </div>
           </div>
 
@@ -1039,7 +1137,9 @@ export default function EPass() {
               {submitting ? 'Submitting…' : '✓ SUBMIT FOR VERIFICATION'}
             </button>
             <div style={{ textAlign: 'center', fontSize: 11, color: 'var(--mute)', marginTop: 10, lineHeight: 1.5 }}>
-              Total payable {getAmountLabel()} · charged only after the depot manager approves your documents.
+              {isStreeShakti
+                ? 'No fee · issued after the depot manager verifies your photo, Aadhaar and AP domicile proof.'
+                : `Total payable ${getAmountLabel()} · charged only after the depot manager approves your documents.`}
             </div>
           </div>
         </div>
