@@ -111,13 +111,12 @@ function describeFailure(stage: string, e: any): string {
 }
 
 // ── Zones (replaces route selection) ──────────────────────────────────────────
-const ZONES = [
-  'Zone A — North (Madhurawada · Rushikonda · Bheemili)',
-  'Zone B — Central (RTC Complex · Dwaraka Nagar · Siripuram)',
-  'Zone C — South (Gajuwaka · Kurmannapalem · Steel Plant)',
-  'Zone D — West (Pendurthi · Sabbavaram · Anandapuram)',
-  'All Zones — Visakhapatnam City',
-]
+// Zonal selection was removed from the form: Visakhapatnam city passes are not
+// actually sold by zone, so asking was a choice without a consequence. The
+// column is still written, because the ID card and the depot portal both state
+// what a pass is valid for — and for Stree Shakti that statement is a legal
+// restriction, not decoration.
+const ZONE_CITYWIDE = 'All Zones — Visakhapatnam City'
 
 const AMOUNTS: Record<string, number> = {
   monthly: 350, student: 150, senior: 175, daily: 50,
@@ -142,6 +141,10 @@ const SS_ELIGIBLE = (g: string) => g === 'female' || g === 'transgender'
 // Stree Shakti pass cannot be sold as an "All Zones" product — the zone list
 // for it has to say what it does NOT cover.
 const SS_ZONE = 'All Zones — Visakhapatnam City (non-AC services only)'
+
+// Derived, never picked.
+const zoneFor = (passType: string) =>
+  passType === 'stree_shakti' ? SS_ZONE : ZONE_CITYWIDE
 
 function ageFromDob(dob: string): number | null {
   if (!dob) return null
@@ -471,7 +474,6 @@ export default function EPass() {
     dob: '',
     gender: 'unspecified',
     passType: 'monthly',
-    zone: ZONES[4],
     cfmsId: '14815316',
     institution: 'AP State Government — Visakhapatnam',
     payment: 'upi_autopay',
@@ -516,10 +518,10 @@ export default function EPass() {
   useEffect(() => {
     setForm(f => {
       if (SS_ELIGIBLE(f.gender) && f.passType === 'monthly') {
-        return { ...f, passType: 'stree_shakti', zone: SS_ZONE }
+        return { ...f, passType: 'stree_shakti' }
       }
       if (!SS_ELIGIBLE(f.gender) && f.passType === 'stree_shakti') {
-        return { ...f, passType: 'monthly', zone: ZONES[4] }
+        return { ...f, passType: 'monthly' }
       }
       return f
     })
@@ -647,7 +649,7 @@ export default function EPass() {
         dob: form.dob,
         gender: form.gender,
         pass_type: form.passType,
-        zone: form.zone,
+        zone: zoneFor(form.passType),
         cfms_id: form.cfmsId,
         institution: form.institution.trim() || null,
         org_name: form.institution.trim() || null,   // kept in sync for older readers
@@ -809,7 +811,7 @@ export default function EPass() {
               ['Date of Birth', `${fmtDate(form.dob)}${age !== null ? ` (${age} yrs)` : ''}`],
               ['Organisation / Institution', form.institution],
               ['Pass Type', (PASS_LABEL[form.passType]?.en || form.passType)],
-              ['Zone', form.zone],
+              ['Valid on', zoneFor(form.passType)],
               ['Amount', getAmountLabel()],
               ['Photo', photoFile ? '✓ Uploaded' : '—'],
               ['Aadhaar proof', aadhaarFile ? '✓ Uploaded' : '—'],
@@ -1078,20 +1080,20 @@ export default function EPass() {
               )}
             </div>
 
-            <div style={{ marginBottom: 12 }}>
-              <label className="form-label">Zone of Validity · జోన్</label>
-              <select className="form-input" value={form.zone} disabled={isStreeShakti}
-                onChange={e => setForm(f => ({ ...f, zone: e.target.value }))}>
-                {isStreeShakti
-                  ? <option value={SS_ZONE}>{SS_ZONE}</option>
-                  : ZONES.map(z => <option key={z} value={z}>{z}</option>)}
-              </select>
-              <div style={{ fontSize: 10, color: isStreeShakti ? '#9A6700' : 'var(--mute)', marginTop: 3 }}>
-                {isStreeShakti
-                  ? '⚠ Not valid on AC services (Green Metro, 900, 900K) — the scheme excludes them.'
-                  : 'The pass is valid on every city service inside the selected zone.'}
+            {/* The Stree Shakti restriction is a legal limit on the pass, not a
+                choice the applicant makes, so it stays visible even though the
+                zone picker is gone. A conductor on an AC service has to be able
+                to refuse this pass, and the holder should not be surprised. */}
+            {isStreeShakti && (
+              <div style={{
+                marginBottom: 12, background: '#FFF8E1', border: '1px solid #FFD54F',
+                borderRadius: 8, padding: '9px 11px', fontSize: 11, color: '#78550A', lineHeight: 1.55,
+              }}>
+                ⚠ <b>Not valid on AC services</b> (Green Metro, 900, 900K) — the Stree
+                Shakti scheme excludes air-conditioned buses.
+                <div style={{ marginTop: 2 }}>ఏసీ సర్వీసుల్లో చెల్లదు.</div>
               </div>
-            </div>
+            )}
 
             <div style={{ marginBottom: 12 }}>
               <label className="form-label">CFMS / Student Roll No.</label>
