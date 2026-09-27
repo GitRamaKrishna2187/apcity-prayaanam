@@ -66,6 +66,12 @@ alter table tickets add column if not exists concession_scheme text;
 -- Backfill: every pre-existing ticket was full-fare.
 update tickets set gross_fare = total_fare where gross_fare is null;
 
+-- ALTER TABLE ... ADD CONSTRAINT has no IF NOT EXISTS, so re-running this
+-- migration after a partial failure would abort here with 42710. The Supabase
+-- SQL editor does not always roll a failed script back, which makes partial
+-- application the normal case rather than the exception — so every statement
+-- in this file has to be safe to run twice.
+alter table tickets drop constraint if exists tickets_concession_ck;
 alter table tickets add constraint tickets_concession_ck
   check (concession_passengers between 0 and passengers) not valid;
 alter table tickets validate constraint tickets_concession_ck;
@@ -96,7 +102,7 @@ alter table epasses add constraint epasses_pass_type_check
 -- with "function is not unique". The old signature has to be dropped first.
 drop function if exists quote_fare(text, text, text, int);
 
-create function quote_fare(
+create or replace function quote_fare(
   p_route text, p_from text, p_to text,
   p_passengers int default 1,
   p_gender text default 'unspecified',
@@ -193,7 +199,7 @@ grant execute on function quote_fare(text, text, text, int, text, int) to anon, 
 -- Same overload trap as quote_fare above.
 drop function if exists issue_ticket(text, text, text, int, text);
 
-create function issue_ticket(
+create or replace function issue_ticket(
   p_route text, p_from text, p_to text,
   p_passengers int default 1, p_mobile text default null,
   p_gender text default 'unspecified',
@@ -250,7 +256,7 @@ grant execute on function issue_ticket(text, text, text, int, text, text, int) t
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 drop function if exists get_my_ticket(text, uuid);
 
-create function get_my_ticket(p_ticket_no text, p_token uuid)
+create or replace function get_my_ticket(p_ticket_no text, p_token uuid)
 returns table (
   ticket_no text, route_no text, route_name text, bus_type text,
   from_stop text, to_stop text, distance_km numeric, passengers int,
