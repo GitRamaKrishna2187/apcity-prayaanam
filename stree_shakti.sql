@@ -90,7 +90,13 @@ alter table epasses add constraint epasses_pass_type_check
 -- ║ 3. FARE QUOTE — concession applied server-side                           ║
 -- ╚══════════════════════════════════════════════════════════════════════════╝
 
-create or replace function quote_fare(
+-- The new signature adds two defaulted parameters, so `create or replace`
+-- would OVERLOAD the existing quote_fare(text,text,text,int) rather than
+-- replace it. A four-argument call would then match both candidates and fail
+-- with "function is not unique". The old signature has to be dropped first.
+drop function if exists quote_fare(text, text, text, int);
+
+create function quote_fare(
   p_route text, p_from text, p_to text,
   p_passengers int default 1,
   p_gender text default 'unspecified',
@@ -184,7 +190,10 @@ grant execute on function quote_fare(text, text, text, int, text, int) to anon, 
 -- pay, so parking it in 'awaiting_payment' would strand the passenger behind a
 -- UPI screen for a ₹0 charge.
 
-create or replace function issue_ticket(
+-- Same overload trap as quote_fare above.
+drop function if exists issue_ticket(text, text, text, int, text);
+
+create function issue_ticket(
   p_route text, p_from text, p_to text,
   p_passengers int default 1, p_mobile text default null,
   p_gender text default 'unspecified',
@@ -313,7 +322,16 @@ left join fare_rules  f on f.bus_type = t.bus_type
 where t.issued_at is not null;
 
 -- Daily roll-up, including the state reimbursement claim line.
-create or replace view eticket_revenue_daily as
+--
+-- `create or replace view` can only APPEND columns to an existing view — it
+-- cannot rename, reorder or remove them. This definition inserts `depot` at
+-- position 5, where the previous version had `tickets_sold`, which fails with
+-- 42P16. Nothing inside the database reads this view (Power BI connects from
+-- outside), so dropping it is safe; the Power BI refresh picks up the new
+-- columns on its next load.
+drop view if exists eticket_revenue_daily;
+
+create view eticket_revenue_daily as
 select
   service_date,
   bus_type, bus_label, route_no, depot,
