@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import StatusBar from './StatusBar'
 
@@ -7,6 +7,33 @@ export default function Profile() {
   const [editing, setEditing] = useState(false)
   const [saved, setSaved] = useState(false)
   const [activeTab, setActiveTab] = useState<'profile' | 'tickets'>('profile')
+
+  // Bus-arrival alerts are a device preference, not a profile field, so they
+  // do not belong behind the Edit button and must survive a reload. Stored per
+  // browser; there is no server-side profile to hold it.
+  const NOTIF_KEY = 'apcp.notifications'
+  const [notifyOn, setNotifyOn] = useState(false)
+  const [notifPerm, setNotifPerm] = useState<string>('default')
+
+  useEffect(() => {
+    try { setNotifyOn(localStorage.getItem(NOTIF_KEY) === 'on') } catch { /* private mode */ }
+    if (typeof Notification !== 'undefined') setNotifPerm(Notification.permission)
+  }, [])
+
+  async function toggleNotifications() {
+    const next = !notifyOn
+    // Turning it on is meaningless without OS permission, so ask for it here
+    // rather than letting the switch imply a capability the browser has not
+    // granted. If the user declines, the switch stays off — it should never
+    // show "on" while the platform is blocking alerts.
+    if (next && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      const perm = await Notification.requestPermission()
+      setNotifPerm(perm)
+      if (perm !== 'granted') { setNotifyOn(false); return }
+    }
+    setNotifyOn(next)
+    try { localStorage.setItem(NOTIF_KEY, next ? 'on' : 'off') } catch { /* private mode */ }
+  }
 
   const [profile, setProfile] = useState({
     name: 'Bhanu Gopal',
@@ -18,16 +45,15 @@ export default function Profile() {
     address: 'Flat 4B, xxxxx Towers, xxxxxxx Colony, Visakhapatnam – 530017',
     preferredRoute: '900R — RTC Complex to Rushikonda',
     language: 'English',
-    notifications: true,
     upiId: 'xxxxgopal@okaxis',
   })
 
   const tickets = [
-    { id: 'TKT-2025-001', route: '900R', from: 'RTC Complex', to: 'Rushikonda', date: 'Today, 06:45 AM', fare: '₹22', status: 'Used' },
-    { id: 'TKT-2025-002', route: '400', from: 'RTC Complex', to: 'Gajuwaka', date: 'Yesterday, 08:10 AM', fare: '₹18', status: 'Used' },
-    { id: 'TKT-2025-003', route: '38J', from: 'MVP Colony', to: 'Steel Plant', date: '12 May, 07:30 AM', fare: '₹30', status: 'Used' },
-    { id: 'TKT-2025-004', route: '60R', from: 'Simhachalam', to: 'MVP Colony', date: '11 May, 09:15 AM', fare: '₹14', status: 'Used' },
-    { id: 'TKT-2025-005', route: '10K', from: 'RTC Complex', to: 'Kailashagiri', date: '10 May, 07:00 AM', fare: '₹25', status: 'Used' },
+    { id: 'TKT-2026-001', route: '900R', from: 'RTC Complex', to: 'Rushikonda', date: 'Today, 06:45 AM', fare: '₹22', status: 'Used' },
+    { id: 'TKT-2026-002', route: '400', from: 'RTC Complex', to: 'Gajuwaka', date: 'Yesterday, 08:10 AM', fare: '₹18', status: 'Used' },
+    { id: 'TKT-2026-003', route: '38J', from: 'MVP Colony', to: 'Steel Plant', date: '12 May, 07:30 AM', fare: '₹30', status: 'Used' },
+    { id: 'TKT-2026-004', route: '60R', from: 'Simhachalam', to: 'MVP Colony', date: '11 May, 09:15 AM', fare: '₹14', status: 'Used' },
+    { id: 'TKT-2026-005', route: '10K', from: 'RTC Complex', to: 'Kailashagiri', date: '10 May, 07:00 AM', fare: '₹25', status: 'Used' },
   ]
 
   function handleSave() {
@@ -168,15 +194,36 @@ export default function Profile() {
                   <div style={{ fontSize: 13, color: 'var(--text)', padding: '8px 0', borderBottom: '1px solid #F0F4FA' }}>{profile.preferredRoute}</div>
                 )}
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>Bus arrival notifications</div>
-                  <div style={{ fontSize: 11, color: 'var(--mute)' }}>Alert 5 min before bus arrives</div>
+                  <div style={{ fontSize: 11, color: notifPerm === 'denied' ? 'var(--red)' : 'var(--mute)', lineHeight: 1.45 }}>
+                    {notifPerm === 'denied'
+                      ? 'Blocked in browser settings — allow notifications for this site to enable.'
+                      : notifyOn
+                      ? 'On — you will be alerted 5 min before your bus arrives.'
+                      : 'Alert 5 min before bus arrives'}
+                  </div>
                 </div>
-                <div onClick={() => editing && setProfile(p => ({ ...p, notifications: !p.notifications }))}
-                  style={{ width: 44, height: 24, borderRadius: 12, background: profile.notifications ? 'var(--green)' : '#E2E8F0', position: 'relative', cursor: editing ? 'pointer' : 'default', flexShrink: 0 }}>
-                  <div style={{ position: 'absolute', top: 2, left: profile.notifications ? 22 : 2, width: 20, height: 20, borderRadius: '50%', background: 'white', transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
-                </div>
+                <button
+                  onClick={toggleNotifications}
+                  disabled={notifPerm === 'denied'}
+                  aria-label="Bus arrival notifications"
+                  aria-pressed={notifyOn}
+                  style={{
+                    width: 44, height: 24, borderRadius: 12, border: 'none', padding: 0,
+                    background: notifyOn ? 'var(--green)' : '#E2E8F0',
+                    position: 'relative', flexShrink: 0,
+                    cursor: notifPerm === 'denied' ? 'not-allowed' : 'pointer',
+                    opacity: notifPerm === 'denied' ? 0.5 : 1,
+                    transition: 'background 0.2s',
+                  }}>
+                  <div style={{
+                    position: 'absolute', top: 2, left: notifyOn ? 22 : 2, width: 20, height: 20,
+                    borderRadius: '50%', background: 'white', transition: 'left 0.2s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }} />
+                </button>
               </div>
             </div>
 
@@ -201,7 +248,7 @@ export default function Profile() {
               <button style={{ width: '100%', padding: 11, background: 'white', color: '#C0392B', border: '1.5px solid #C0392B', borderRadius: 10, fontFamily: 'Rajdhani,sans-serif', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}>
                 Sign Out
               </button>
-              <div style={{ textAlign: 'center', fontSize: 10, color: 'var(--mute)', marginTop: 10 }}>APCityPrayaanam v1.0 · © 2025 APCityPrayaanam</div>
+              <div style={{ textAlign: 'center', fontSize: 10, color: 'var(--mute)', marginTop: 10 }}>APCityPrayaanam v1.0 · © 2026 APCityPrayaanam</div>
             </div>
           </>
         )}

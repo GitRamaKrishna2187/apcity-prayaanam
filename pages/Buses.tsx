@@ -13,7 +13,6 @@ interface BusRow {
   seats_occupied: number
   departure_time: string
   arrival_time: string
-  driver_name: string
   delay_mins: number
   last_gps_update: string
 }
@@ -246,7 +245,7 @@ export default function Buses() {
       const routeNos = matchedRoutes.map(r => r.route_no)
       const { data: busData } = await supabase
         .from('buses')
-        .select('id,registration,route_no,status,current_stop_index,seats_occupied,departure_time,arrival_time,driver_name,delay_mins,last_gps_update')
+        .select('id,registration,route_no,status,current_stop_index,seats_occupied,departure_time,arrival_time,delay_mins,last_gps_update')
         .in('route_no', routeNos)
         .order('departure_time', { ascending: true })
 
