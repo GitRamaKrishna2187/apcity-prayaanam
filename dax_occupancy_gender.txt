@@ -1,0 +1,190 @@
+// ════════════════════════════════════════════════════════════════════════════
+// APCityPrayaanam — GENDER SPLIT ON THE OCCUPANCY FEED
+// DAX additions for the existing "PASSENGERS OCCUPANCY" dashboard page
+//
+// SOURCE: load the view `occupancy_gender_facts` (from occupancy_gender_split.sql).
+// Use it INSTEAD OF occupancy_history where gender is involved — it already
+// joins routes, so bus_type / depot / ac / capacity slice without extra
+// relationships, and it exposes hour_ist and service_date directly.
+//
+// ⚠ MODEL SETUP — THE SAME TRAP YOU HAVE ALREADY HIT TWICE
+//   occupancy_gender_facts[route_no]     -> routes[route_no]   Many-to-one
+//   occupancy_gender_facts[service_date] -> 'Date'[Date]       Many-to-one
+//   Set BOTH cardinalities MANUALLY in Model view, with the fact table on the
+//   "many" side. Auto-detect guessed this backwards twice on occupancy_history
+//   and this view has the identical shape, so it will do it again.
+//
+// ⚠ THIS DATA IS SIMULATED. The gender split is a modelling assumption applied
+//   to the mock occupancy feed — 80% of occupants female, 20% male — not an
+//   observed measurement. Every visual built on these measures needs to say so.
+//   See the caption measure at the bottom, which is designed to be dropped onto
+//   the page so the disclaimer travels with the numbers.
+// ════════════════════════════════════════════════════════════════════════════
+
+
+// ── 1. HEADLINE COUNTS ──────────────────────────────────────────────────────
+
+Female Passengers (Occupancy) =
+SUM(occupancy_gender_facts[female_occupied])
+
+Male Passengers (Occupancy) =
+SUM(occupancy_gender_facts[male_occupied])
+
+Total Passengers (Occupancy) =
+SUM(occupancy_gender_facts[seats_occupied])
+// Should equal [Female Passengers (Occupancy)] + [Male Passengers (Occupancy)]
+// exactly. Male is stored as the remainder of seats_occupied, so rounding can
+// never create or lose a passenger — see the integrity check below.
+
+Female Share % =
+DIVIDE([Female Passengers (Occupancy)], [Total Passengers (Occupancy)])
+
+Male Share % =
+DIVIDE([Male Passengers (Occupancy)], [Total Passengers (Occupancy)])
+
+Gender Split Check =
+VAR Delta =
+    [Total Passengers (Occupancy)]
+    - ([Female Passengers (Occupancy)] + [Male Passengers (Occupancy)])
+RETURN IF(Delta = 0, "✅ Ties out", "⚠ Off by " & Delta)
+// Put this on the admin/diagnostics page. If it ever fires, someone has
+// written to female_occupied or male_occupied directly, bypassing the trigger.
+
+
+// ── 2. PEAK / OFF-PEAK, MIRRORING YOUR EXISTING WINDOWS ─────────────────────
+// Same 6-9 and 17-20 windows the occupancy measures already use, so the gender
+// tiles line up with the Morning Peak / Evening Peak / Off-Peak row on the page
+// rather than introducing a second, silently different definition of "peak".
+
+Female Passengers — Morning Peak =
+CALCULATE(
+    [Female Passengers (Occupancy)],
+    occupancy_gender_facts[hour_ist] >= 6,
+    occupancy_gender_facts[hour_ist] < 9
+)
+
+Female Passengers — Evening Peak =
+CALCULATE(
+    [Female Passengers (Occupancy)],
+    occupancy_gender_facts[hour_ist] >= 17,
+    occupancy_gender_facts[hour_ist] < 20
+)
+
+Female Passengers — Off-Peak =
+CALCULATE(
+    [Female Passengers (Occupancy)],
+    NOT (occupancy_gender_facts[hour_ist] >= 6 && occupancy_gender_facts[hour_ist] < 9),
+    NOT (occupancy_gender_facts[hour_ist] >= 17 && occupancy_gender_facts[hour_ist] < 20)
+)
+
+Female Share % — Morning Peak =
+CALCULATE([Female Share %],
+    occupancy_gender_facts[hour_ist] >= 6, occupancy_gender_facts[hour_ist] < 9)
+
+Female Share % — Evening Peak =
+CALCULATE([Female Share %],
+    occupancy_gender_facts[hour_ist] >= 17, occupancy_gender_facts[hour_ist] < 20)
+// With a flat ratio these will read ~80% in every window, which is the honest
+// consequence of a flat assumption. If you later want peak/off-peak to differ,
+// change it in occupancy_mix_rules and re-backfill — do not special-case it in
+// DAX, or the dashboard and the database will tell different stories.
+
+
+// ── 3. TREND (needs the Date relationship) ──────────────────────────────────
+
+Female Passengers Today =
+CALCULATE([Female Passengers (Occupancy)], occupancy_gender_facts[service_date] = TODAY())
+
+Male Passengers Today =
+CALCULATE([Male Passengers (Occupancy)], occupancy_gender_facts[service_date] = TODAY())
+
+Female Passengers Yesterday =
+CALCULATE([Female Passengers (Occupancy)], DATEADD('Date'[Date], -1, DAY))
+
+Female Passengers Change vs Yesterday =
+[Female Passengers Today] - [Female Passengers Yesterday]
+
+Female Share % — 7 Day Rolling =
+CALCULATE(
+    [Female Share %],
+    DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -7, DAY)
+)
+
+
+// ── 4. ROUTE / DEPOT COMPARISON ─────────────────────────────────────────────
+
+Busiest Route (Female Passengers) =
+VAR ByRoute =
+    ADDCOLUMNS(
+        ALLSELECTED(occupancy_gender_facts[route_no]),
+        "@f", [Female Passengers (Occupancy)]
+    )
+VAR Best = TOPN(1, FILTER(ByRoute, [@f] > 0), [@f], DESC)
+RETURN
+    IF(ISEMPTY(Best), "No data",
+        CONCATENATEX(Best,
+            occupancy_gender_facts[route_no] & " — " & FORMAT([@f], "#,0"), ", "))
+
+Female Passenger Rank (Route) =
+RANKX(ALL(occupancy_gender_facts[route_no]), [Female Passengers (Occupancy)], , DESC)
+
+
+// ── 5. THE MEASURE THAT MAKES THIS DEFENSIBLE ───────────────────────────────
+
+Stree Shakti Eligible Passengers =
+CALCULATE([Female Passengers (Occupancy)], occupancy_gender_facts[ac] = FALSE)
+// Women on non-AC services — the population whose fares the State reimburses.
+// Women on AC services are excluded by the scheme and pay, so lumping them in
+// would overstate the reimbursement base.
+
+Notional Free Rides (Eligible) =
+[Stree Shakti Eligible Passengers]
+// Deliberately a separate, differently-named measure rather than a rupee
+// figure. Turning simulated ride counts into a claim value would produce a
+// number that looks auditable and is not. The real rupee claim comes from
+// [Stree Shakti Claim] in dax_ticket_revenue.txt, which is computed from
+// actual issued tickets.
+
+Occupancy Data Disclaimer =
+"Simulated ridership mix — "
+    & FORMAT([Female Share %], "0%") & " female / "
+    & FORMAT([Male Share %], "0%") & " male assumption applied to the "
+    & "occupancy feed. Not observed data."
+// Drop this onto the page as a card or a visual subtitle. A disclaimer that
+// lives only in a comment file does not travel with the screenshot that ends
+// up in a deck.
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// ADDING THESE TO THE "PASSENGERS OCCUPANCY" PAGE
+//
+//   Beside the existing KPI row:
+//     Female Passengers (Occupancy) · Male Passengers (Occupancy) · Female Share %
+//   Beside PEAK VS OFF-PEAK:
+//     Female Passengers — Morning Peak / Evening Peak / Off-Peak
+//   Beside DAY-OVER-DAY TREND:
+//     Female Passengers Change vs Yesterday · Female Share % — 7 Day Rolling
+//   Beside ROUTE LEVEL COMPARISON:
+//     Busiest Route (Female Passengers)
+//   New visual:
+//     100% stacked column — female_occupied / male_occupied by hour_ist
+//   Page footer:
+//     Occupancy Data Disclaimer · Gender Split Check
+//
+// ── TWO THINGS TO KNOW BEFORE THIS GOES IN FRONT OF ANYONE ─────────────────
+//
+// 1. A FLAT RATIO PRODUCES A FLAT CHART. Every hour, every route and every
+//    depot will read ~80% female, because that is exactly what was assumed.
+//    The 100% stacked column by hour will be a featureless band. That is not a
+//    bug and it is not an insight — it is the assumption reflected back. If you
+//    want the dashboard to show a ridership *pattern*, the variation has to be
+//    put into occupancy_mix_rules (or into the generator), not discovered in
+//    the chart.
+//
+// 2. ROUNDING DOMINATES AT VERY LOW OCCUPANCY. With 1-2 passengers on a bus,
+//    round(seats * 0.8) gives 1 of 1 and 2 of 2 — a 100% female share. Overnight
+//    hours in the current data sit at ~15% occupancy and consequently read 75%
+//    rather than 80%. Totals still tie out exactly; it is integer rounding on
+//    small numbers, not a defect. Filter to seats_occupied > 5 if a reviewer
+//    fixates on the overnight rows.
+// ════════════════════════════════════════════════════════════════════════════
