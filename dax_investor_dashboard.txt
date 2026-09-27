@@ -1,0 +1,261 @@
+// ════════════════════════════════════════════════════════════════════════════
+// APCityPrayaanam — INVESTOR DASHBOARD
+// One page. One fact table. 17 measures.
+//
+// REPLACES dax_occupancy_history.txt AND dax_occupancy_gender.txt.
+// Delete both from the model — see the RETIRED list at the end. Keeping them
+// alongside these is what produced the contradiction described below.
+//
+// ════════════════════════════════════════════════════════════════════════════
+// WHY THE OLD PAGES DISAGREED — FIX THIS BEFORE ANYTHING ELSE
+//
+//   "Passengers Count _7 days"      21,891   = COUNTROWS(occupancy_history)
+//   "Total Passengers (Occupancy)"  707,000  = SUM(seats_occupied)
+//
+//   Two tiles, both labelled passengers, 32x apart, and NEITHER is a
+//   passenger count:
+//
+//   - The first counts SNAPSHOTS. occupancy_history records every running bus
+//     every 15 minutes, so it counts observations of buses, not people.
+//   - The second counts PASSENGER-SNAPSHOTS. The average route runs 69
+//     minutes, so one passenger is recorded ~4.6 times. It overstates
+//     ridership by that factor.
+//
+//   Verified against the 21,799 logged rows:
+//       snapshots             21,799
+//       passenger_snapshots  688,212
+//       est. boardings       150,738     <- the ridership number
+//       passenger_minutes 10,323,180     <- the advertising number
+//
+//   An investor who asks "how did you count a passenger?" — and they will,
+//   it is the first question in any audience-data diligence — gets a 4.6x
+//   correction on the spot if the deck says 707K. That is not a rounding
+//   argument; it is the kind of thing that ends a conversation.
+//
+//   The 688,212 is not junk. It is the CORRECT basis for advertising
+//   exposure and the WRONG basis for ridership. Both numbers below are kept,
+//   under names that cannot be confused.
+//
+// SOURCE TABLES (from occupancy_demographics.sql):
+//   ridership_facts      one row per snapshot, every quantity truly named
+//   ridership_age_long   long-form age bands, for one chart instead of five
+//
+// MODEL SETUP — the trap that has already cost you two refresh failures:
+//   ridership_facts[route_no]     -> routes[route_no]   Many-to-one
+//   ridership_facts[service_date] -> 'Date'[Date]        Many-to-one
+//   ridership_age_long[service_date] -> 'Date'[Date]     Many-to-one
+//   Set cardinality MANUALLY in Model view, fact table on the "many" side.
+// ════════════════════════════════════════════════════════════════════════════
+
+
+// ── A. AUDIENCE VOLUME — the four numbers the deck leads with ───────────────
+
+Est Boardings =
+SUM(ridership_facts[est_boardings])
+// THE ridership number. Passenger-snapshots deflated by journey length, so a
+// passenger is counted once per journey rather than once per observation.
+// Use this anywhere the word "passengers" or "riders" appears.
+
+Ad Impressions (Passenger-Minutes) =
+SUM(ridership_facts[passenger_minutes])
+// THE advertising number: total minutes of passenger attention available to
+// an in-bus screen. A 69-minute journey is 69 minutes of dwell time, which is
+// precisely why it is a better exposure metric than boardings — and why it is
+// larger. Name it this way on every visual; never shorten it to "passengers".
+
+Avg Daily Boardings =
+DIVIDE([Est Boardings], DISTINCTCOUNT(ridership_facts[service_date]))
+// Normalises for the logging window. Quoting a cumulative total without the
+// number of days behind it invites the assumption that it is a daily figure.
+
+Buses Tracked =
+DISTINCTCOUNT(ridership_facts[registration])
+
+
+// ── B. SERVICE QUALITY — what makes the audience durable ───────────────────
+
+Avg Occupancy % =
+AVERAGEX(ridership_facts, DIVIDE(ridership_facts[passenger_snapshots], ridership_facts[capacity]))
+// Computed from the fact table rather than a calculated column, so it honours
+// slicers on depot / bus type / day part. The old
+// AVERAGE(occupancy_history[Occupancy %]) averaged a pre-computed column and
+// silently ignored capacity differences between 52-seat and 44-seat buses.
+
+Peak-to-OffPeak Ratio =
+DIVIDE(
+    CALCULATE([Avg Occupancy %], ridership_facts[day_part] <> "Off-Peak"),
+    CALCULATE([Avg Occupancy %], ridership_facts[day_part] = "Off-Peak")
+)
+// >1 means peak genuinely runs fuller. Uses the day_part column from the view
+// so the dashboard and the database define "peak" in exactly one place.
+
+Snapshot Count =
+COUNTROWS(ridership_facts)
+// Caption only — "based on N observations". NEVER put this on a tile labelled
+// passengers. This is the measure the old page was mislabelling.
+
+
+// ── C. DEMOGRAPHICS — the product being sold ───────────────────────────────
+
+Female Passengers =
+SUM(ridership_facts[female_occupied])
+
+Female Share % =
+DIVIDE([Female Passengers], SUM(ridership_facts[passenger_snapshots]))
+
+Age Band Passengers =
+SUM(ridership_age_long[passengers])
+// Put ridership_age_long[band] on the axis (sorted by sort_order) and this on
+// values — one chart covers all five bands. Five separate measures would have
+// to be rebuilt every time a band changes.
+
+Under-25 Share % =
+DIVIDE(
+    CALCULATE([Age Band Passengers], ridership_age_long[band] IN { "Under 18", "18-25" }),
+    CALCULATE([Age Band Passengers], ALL(ridership_age_long[band]))
+)
+// The segment advertisers pay most for. Isolated as its own measure because
+// it is the single demographic claim most likely to be challenged.
+
+Demographic Integrity Check =
+VAR G = [Female Passengers] + SUM(ridership_facts[male_occupied])
+VAR T = SUM(ridership_facts[passenger_snapshots])
+RETURN IF(G = T, "✅ Gender ties to total", "⚠ Gender off by " & T - G)
+// Belongs on the page, not hidden on an admin tab. A demographic breakdown
+// whose parts do not sum to the whole is the fastest way to lose a room.
+
+
+// ── D. ROUTE CONCENTRATION — where the inventory actually is ───────────────
+
+Top Route by Boardings =
+VAR ByRoute =
+    ADDCOLUMNS(ALLSELECTED(ridership_facts[route_no]), "@b", [Est Boardings])
+VAR Best = TOPN(1, FILTER(ByRoute, [@b] > 0), [@b], DESC)
+RETURN
+    IF(ISEMPTY(Best), "No data",
+        CONCATENATEX(Best,
+            ridership_facts[route_no] & " — " & FORMAT([@b], "#,0") & " boardings", ", "))
+
+Top 10 Route Concentration % =
+VAR ByRoute =
+    ADDCOLUMNS(ALL(ridership_facts[route_no]), "@b", [Est Boardings])
+VAR Top10 = TOPN(10, ByRoute, [@b], DESC)
+RETURN DIVIDE(SUMX(Top10, [@b]), CALCULATE([Est Boardings], ALL(ridership_facts)))
+// How much of the audience sits in ten routes.
+//
+// ⚠ ON THE CURRENT DATA THIS READS 22.5%, WHICH IS LOW. The audience is
+//   DISPERSED, not concentrated:
+//       top 5 routes  = 12.7% of boardings
+//       top 10 routes = 22.5%
+//       top 30 routes = 51.3%   <- half the audience needs 30 routes
+//       all 88 routes = 100%
+//
+//   I expected concentration and the data says otherwise, so the honest
+//   reading is the opposite of the usual pitch: a screen pilot cannot reach
+//   meaningful audience from a handful of routes. Reaching half the riders
+//   means equipping roughly a third of the network.
+//
+//   Do not hide this — an investor will compute it from the route chart in
+//   about ten seconds. Put it in the deck as a deployment-cost input, and let
+//   the depot slicer make the counter-argument: concentration within a single
+//   depot is far higher than across the network, so a depot-level pilot is the
+//   defensible unit, not a route-level one. Measured on the current data:
+//       Maddilapalem 24.5% of all boardings
+//       Simhachalam  18.4%
+//       Waltair      15.2%
+//       Gajuwaka     14.3%
+//   Two depots reach ~43% of the audience. THAT is the capital-efficiency
+//   argument — one depot, not ten routes. Lead with the depot figure and show
+//   the route dispersion as the reason for it.
+
+
+// ── E. TREND ────────────────────────────────────────────────────────────────
+
+Boardings — 7 Day Rolling =
+CALCULATE([Est Boardings], DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -7, DAY))
+
+Boardings Change vs Yesterday =
+[Est Boardings] - CALCULATE([Est Boardings], DATEADD('Date'[Date], -1, DAY))
+
+
+// ── F. PROVENANCE — the measure that protects the rest ─────────────────────
+
+Data Provenance =
+"Ridership volumes from " & FORMAT([Snapshot Count], "#,0")
+  & " logged 15-min snapshots across "
+  & DISTINCTCOUNT(ridership_facts[service_date]) & " service days. "
+  & "Gender and age mix are MODELLED assumptions, not observed at boarding — "
+  & "no demographic data is captured on a non-ticketed journey. "
+  & "Verified demographics come from issued ePasses and e-Tickets only."
+// Place this as a footer card on the page. A disclaimer in a notes file does
+// not travel with the screenshot that ends up in the deck, and a modelled
+// demographic presented as measured is a misrepresentation to an investor
+// whether or not it was intended as one.
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// SINGLE-PAGE LAYOUT — "ROUTE TRAFFIC & AUDIENCE"
+//
+// ┌ SLICERS (top strip, horizontal) ────────────────────────────────────────┐
+// │  'Date'[Date] (range)  ·  routes[depot]  ·  routes[bus_type]            │
+// │  ridership_facts[day_part]  ·  ridership_facts[ac] (Yes/No)            │
+// └─────────────────────────────────────────────────────────────────────────┘
+//
+// ROW 1 — five KPI cards, in this order:
+//   Est Boardings · Avg Daily Boardings · Ad Impressions (Passenger-Minutes)
+//   · Avg Occupancy % · Buses Tracked
+//
+// ROW 2 — the demographic story, three visuals:
+//   • Donut: Female Share % vs male          (title: "Gender mix — modelled")
+//   • Bar:   Age Band Passengers by band     (axis sorted by sort_order,
+//            title: "Age mix — modelled")
+//   • Two cards stacked: Under-25 Share % · Female Share %
+//
+// ROW 3 — traffic, two visuals:
+//   • Line: Boardings — 7 Day Rolling by 'Date'[Date]
+//   • Column: Est Boardings by hour_ist, legend = day_part
+//            (this is the shape that proves peak demand to an investor)
+//
+// ROW 4 — concentration:
+//   • Horizontal bar: Est Boardings by route_no, Top 10 filter
+//   • Card: Top 10 Route Concentration %
+//   • Card: Top Route by Boardings
+//
+// FOOTER — full width:
+//   Data Provenance  ·  Demographic Integrity Check
+//
+// ── WHAT TO DELETE FROM THE MODEL (RETIRED) ───────────────────────────────
+// From dax_occupancy_history.txt — all of it. Specifically:
+//   Avg Occupancy % (History), Peak Occupancy % (History), Min Occupancy %
+//   (History), Morning/Evening Peak Occupancy %, Off-Peak Occupancy %,
+//   Peak-to-OffPeak Ratio (old version), Avg Occupancy % Yesterday,
+//   Occupancy % Change vs Yesterday, Avg Occupancy % - 7 Day Rolling,
+//   Busiest Route (Avg Occupancy), Route Occupancy Rank, Records Logged Today,
+//   and above all "Passengers Count _7 days" / "Passenger Count_Today", which
+//   are snapshot counts wearing a passenger label.
+//
+// From dax_occupancy_gender.txt — all of it. The nine Female/Male peak and
+// trend variants collapse into [Female Passengers] plus the day_part slicer:
+// in Power BI a slicer does the work of a measure-per-window, and nine
+// measures that differ only by filter are nine places for definitions to
+// drift apart.
+//
+// KEEP from dax_occupancy_history.txt, on a separate ADMIN page only:
+//   Last Snapshot Time, Minutes Since Last Snapshot, Snapshot Job Healthy.
+//   Operational health checks, not investor content.
+//
+// KEEP dax_ticket_revenue.txt unchanged. It measures real issued tickets and
+// answers a different question — revenue, not audience.
+//
+// ── THE SLIDE THIS PAGE IS FOR ─────────────────────────────────────────────
+// Two honest sentences beat one impressive one:
+//   "~15,000 boardings a day across 88 routes, generating ~1.0 million
+//    passenger-minutes of in-bus attention a day. The audience is dispersed —
+//    half of it sits across 30 routes — so we scope a pilot by depot rather
+//    than by route."
+// Then, when asked about demographics, the true answer: the mix is modelled,
+// the verified sample comes from ePasses and e-Tickets, and it is small today
+// and growing. An investor who catches an overstatement stops believing the
+// rest of the deck; one who is told the limit up front tends to believe the
+// parts you do stand behind.
+// ════════════════════════════════════════════════════════════════════════════
