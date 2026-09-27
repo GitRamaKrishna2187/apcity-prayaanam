@@ -23,7 +23,20 @@ type Quote = {
   route_no: string; route_name: string; bus_type: string; bus_label: string; ac: boolean
   from_stop: string; to_stop: string; distance_km: number
   fare_each: number; passengers: number; total_fare: number
+  gross_fare: number; stree_shakti_eligible: boolean
+  concession_passengers: number; concession_amount: number
+  concession_scheme: string | null; ineligible_reason: string | null
 }
+
+// The GO names "girls, women and transgender individuals" as beneficiaries, so
+// the concession category is not binary. 'unspecified' stays available — a
+// passenger who declines to state one still gets a ticket, at full fare.
+const GENDERS = [
+  { v: 'female',      en: 'Female',      te: 'మహిళ' },
+  { v: 'male',        en: 'Male',        te: 'పురుషుడు' },
+  { v: 'transgender', en: 'Transgender', te: 'ట్రాన్స్‌జెండర్' },
+  { v: 'unspecified', en: 'Prefer not to say', te: 'చెప్పదలచుకోలేదు' },
+]
 
 const TYPE_STYLE: Record<string, { bg: string; fg: string; icon: string }> = {
   metro_luxury:  { bg: '#E8F5E9', fg: '#1A7A4A', icon: '⚡' },
@@ -144,6 +157,12 @@ function TicketCard({ t }: { t: any }) {
           </div>
           <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)' }}>ఏపీఎస్ఆర్టీసీ ఈ-టికెట్</div>
         </div>
+        {Number(t.concession_amount) > 0 && !done && (
+          <div style={{
+            background: '#1B5E20', color: 'white', fontSize: 9, fontWeight: 800,
+            padding: '3px 8px', borderRadius: 4, marginRight: 6, letterSpacing: 0.3,
+          }}>స్త్రీ శక్తి</div>
+        )}
         <div style={{
           background: state.bg,
           color: state.bg === 'var(--gold)' ? 'var(--blue)' : 'white',
@@ -182,7 +201,8 @@ function TicketCard({ t }: { t: any }) {
           {[
             ['PASSENGERS', String(t.passengers)],
             ['DISTANCE', `${t.distance_km} km`],
-            ['FARE PAID', `₹${t.total_fare}`],
+            [Number(t.total_fare) === 0 ? 'FARE' : 'FARE PAID',
+             Number(t.total_fare) === 0 ? 'FREE' : `₹${t.total_fare}`],
             completed ? ['ARRIVED ~', fmtTime(t.expected_arrival)]
               : onBoard ? ['ARRIVING ~', fmtTime(t.expected_arrival)]
               : ['VALID TILL', fmtTime(t.valid_until)],
@@ -243,7 +263,20 @@ function TicketCard({ t }: { t: any }) {
           </div>
         </div>
 
-        {!t.payment_verified && !done && (
+        {Number(t.concession_amount) > 0 && (
+          <div style={{
+            marginTop: 10, background: '#E8F5E9', border: '1px solid #A5D6A7',
+            borderRadius: 7, padding: '8px 11px', fontSize: 10.5, color: '#1B5E20', lineHeight: 1.55,
+          }}>
+            <b>స్త్రీ శక్తి · STREE SHAKTI</b> — {t.concession_passengers} of {t.passengers} travelling
+            free. Notional fare ₹{t.gross_fare} borne by the Government of Andhra Pradesh.
+            <div style={{ marginTop: 3, color: '#2E7D32' }}>
+              Carry Aadhaar, voter ID, ration card or driving licence — the conductor may ask for AP domicile proof.
+            </div>
+          </div>
+        )}
+
+        {!t.payment_verified && Number(t.total_fare) > 0 && !done && (
           <div style={{
             marginTop: 10, background: '#FFF8E1', border: '1px solid #FFD54F',
             borderRadius: 7, padding: '7px 10px', fontSize: 10, color: '#78550A', lineHeight: 1.5,
@@ -273,6 +306,10 @@ export default function Tickets() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [passengers, setPassengers] = useState(1)
+  const [gender, setGender] = useState('unspecified')
+  // Group bookings are routinely mixed (a family travelling together), so the
+  // concession is counted per head rather than inferred from one booker.
+  const [freePax, setFreePax] = useState(0)
   const [mobile, setMobile] = useState('')
 
   const [quotes, setQuotes] = useState<Quote[]>([])
@@ -283,6 +320,14 @@ export default function Tickets() {
   const [pending, setPending] = useState<{ ticketNo: string; token: string; total: number } | null>(null)
   const [ticket, setTicket] = useState<any>(null)
   const [myTickets, setMyTickets] = useState<any[]>([])
+
+  useEffect(() => {
+    if (gender === 'female' || gender === 'transgender') {
+      setFreePax(f => Math.min(Math.max(f, 1), passengers))
+    } else {
+      setFreePax(f => Math.min(f, passengers))
+    }
+  }, [gender, passengers])
 
   // ── Find routes serving both stops, then price each ───────────────────────
   const searchRoutes = async () => {
@@ -315,6 +360,7 @@ export default function Tickets() {
       const priced = await Promise.all(candidates.slice(0, 8).map(async rn => {
         const { data } = await supabase.rpc('quote_fare', {
           p_route: rn, p_from: from.trim(), p_to: to.trim(), p_passengers: passengers,
+          p_gender: gender, p_concession_passengers: freePax,
         })
         return data as Quote
       }))
@@ -338,10 +384,24 @@ export default function Tickets() {
       const { data, error } = await supabase.rpc('issue_ticket', {
         p_route: q.route_no, p_from: q.from_stop, p_to: q.to_stop,
         p_passengers: passengers, p_mobile: mobile || null,
+        p_gender: gender, p_concession_passengers: freePax,
       })
       if (error) throw error
       if (!data?.ok) throw new Error(data?.reason || 'Could not create the ticket.')
       setChosen(q)
+      saveTicketCred({ ticketNo: data.ticket_no, token: data.access_token })
+
+      // Nothing to pay under Stree Shakti — parking the passenger behind a UPI
+      // screen for a ₹0 charge would be absurd. The ticket is already issued.
+      if (data.zero_fare) {
+        const { data: full } = await supabase.rpc('get_my_ticket', {
+          p_ticket_no: data.ticket_no, p_token: data.access_token,
+        })
+        setTicket(full?.[0] || null)
+        setStep('ticket')
+        return
+      }
+
       setPending({ ticketNo: data.ticket_no, token: data.access_token, total: Number(data.total_fare) })
       setStep('pay')
     } catch (e: any) {
@@ -523,6 +583,13 @@ export default function Tickets() {
               ['Distance', `${chosen.distance_km} km`],
               ['Fare per passenger', `₹${chosen.fare_each}`],
               ['Passengers', String(passengers)],
+              ...(chosen.concession_amount > 0
+                ? [
+                    ['Full fare', `₹${chosen.gross_fare}`] as [string, string],
+                    [`Stree Shakti — ${chosen.concession_passengers} free`,
+                     `− ₹${chosen.concession_amount}`] as [string, string],
+                  ]
+                : []),
             ].map(([l, v]) => (
               <div key={l} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '6px 0', borderBottom: '1px solid #F0F4FA' }}>
                 <span style={{ fontSize: 12, color: 'var(--mute)' }}>{l}</span>
@@ -604,20 +671,42 @@ export default function Tickets() {
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: 700, color: 'var(--blue)' }}>
-                      ₹{q.total_fare}
+                    <div style={{
+                      fontFamily: 'Rajdhani,sans-serif', fontSize: 20, fontWeight: 700,
+                      color: q.total_fare === 0 ? 'var(--green)' : 'var(--blue)',
+                    }}>
+                      {q.total_fare === 0 ? 'FREE' : `₹${q.total_fare}`}
                     </div>
-                    <div style={{ fontSize: 9, color: 'var(--mute)' }}>
-                      ₹{q.fare_each} × {passengers}
-                    </div>
+                    {q.concession_amount > 0 ? (
+                      <div style={{ fontSize: 9, color: 'var(--mute)' }}>
+                        <span style={{ textDecoration: 'line-through' }}>₹{q.gross_fare}</span>
+                        {' '}· Stree Shakti
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 9, color: 'var(--mute)' }}>
+                        ₹{q.fare_each} × {passengers}
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* A woman being charged on an AC service will ask why. Answer it
+                    here rather than at the depot counter. */}
+                {freePax > 0 && !q.stree_shakti_eligible && q.ineligible_reason && (
+                  <div style={{
+                    margin: '0 14px 10px', background: '#FFF8E1', border: '1px solid #FFD54F',
+                    borderRadius: 7, padding: '7px 10px', fontSize: 10.5, color: '#78550A', lineHeight: 1.5,
+                  }}>
+                    ⚠ {q.ineligible_reason}. Full fare applies · పూర్తి ఛార్జీ వర్తిస్తుంది.
+                  </div>
+                )}
                 <button onClick={() => startPayment(q)} disabled={busy} style={{
                   width: '100%', padding: 11, background: 'var(--blue)', color: 'white',
                   border: 'none', fontFamily: 'Rajdhani,sans-serif', fontSize: 15,
                   fontWeight: 700, letterSpacing: 0.5, cursor: 'pointer',
                 }}>
-                  {busy ? 'Please wait…' : 'BOOK THIS SERVICE →'}
+                  {busy ? 'Please wait…'
+                    : q.total_fare === 0 ? 'GET FREE TICKET →' : 'BOOK THIS SERVICE →'}
                 </button>
               </div>
             )
@@ -664,11 +753,36 @@ export default function Tickets() {
               </select>
             </div>
             <div>
-              <label className="form-label">Mobile (optional)</label>
-              <input type="tel" inputMode="numeric" maxLength={10} className="form-input"
-                placeholder="For ticket recovery" value={mobile}
-                onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} />
+              <label className="form-label">Gender · లింగం</label>
+              <select className="form-input" value={gender}
+                onChange={e => setGender(e.target.value)}>
+                {GENDERS.map(g => <option key={g.v} value={g.v}>{g.en} · {g.te}</option>)}
+              </select>
             </div>
+          </div>
+
+          {passengers > 1 && (
+            <div style={{ marginBottom: 12 }}>
+              <label className="form-label">
+                Of these, how many are women / transgender? · ఎంత మంది మహిళలు?
+              </label>
+              <select className="form-input" value={freePax}
+                onChange={e => setFreePax(Number(e.target.value))}>
+                {Array.from({ length: passengers + 1 }, (_, n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+              <div style={{ fontSize: 10, color: 'var(--mute)', marginTop: 3 }}>
+                They travel free on eligible services under Stree Shakti. The rest pay normally.
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 12 }}>
+            <label className="form-label">Mobile (optional)</label>
+            <input type="tel" inputMode="numeric" maxLength={10} className="form-input"
+              placeholder="For ticket recovery" value={mobile}
+              onChange={e => setMobile(e.target.value.replace(/\D/g, '').slice(0, 10))} />
           </div>
 
           <ErrBox />

@@ -1,0 +1,260 @@
+// ════════════════════════════════════════════════════════════════════════════
+// APCityPrayaanam — e-TICKET REVENUE & GENDER-SEGMENTED RIDERSHIP
+// DAX measures for Power BI Desktop
+//
+// SOURCE TABLE: load the view `ticket_facts`, NOT the raw `tickets` table.
+// It is one row per ticket and already carries depot, ac, service_eligible,
+// the paying/free passenger split and service_date, so these measures stay
+// one-liners instead of re-deriving joins in DAX.
+//
+// MODEL SETUP (mirrors the occupancy_history setup — same trap applies):
+//   - ticket_facts[route_no]     -> routes[route_no]      Many-to-one
+//   - ticket_facts[service_date] -> 'Date'[Date]          Many-to-one
+//   Set BOTH cardinalities MANUALLY in Model view with ticket_facts on the
+//   "many" side. Power BI's auto-detect has already guessed this backwards
+//   twice on occupancy_history; ticket_facts has the same shape and will
+//   mislead it the same way.
+//
+// ── THE ONE THING TO UNDERSTAND BEFORE READING THESE ───────────────────────
+// A zero-fare ticket is NOT a missing sale. Under the Stree Shakti GO,
+// APSRTC issues a zero-fare ticket precisely so it can claim reimbursement
+// from the State at the notional fare. So each ticket carries three amounts:
+//
+//   gross_fare        what the journey costs at full tariff
+//   concession_amount the part the State pays (the reimbursement claim)
+//   net_revenue       the part the passenger pays
+//
+//   gross_fare = concession_amount + net_revenue, always.
+//
+// Reporting only net_revenue understates what the platform moved by the whole
+// value of the scheme. Reporting only gross_fare overstates cash collected.
+// Show both, and label them.
+// ════════════════════════════════════════════════════════════════════════════
+
+
+// ── 1. THE THREE HEADLINE MEASURES ──────────────────────────────────────────
+
+Total Ticket Revenue =
+SUM(ticket_facts[net_revenue])
+// Cash actually collected from passengers. This is the number that belongs in
+// any revenue KPI card. Keep it distinct from the ePass measure already in the
+// model — the existing `Total Revenue = SUM(epasses[amount])` counts pass
+// sales only and will silently double-count if you add the two together
+// without renaming. Rename that one to `Total ePass Revenue`.
+
+Total Tickets =
+COUNTROWS(ticket_facts)
+
+Zero-Fare Tickets =
+CALCULATE([Total Tickets], ticket_facts[is_zero_fare] = TRUE)
+// "Total tickets with zero revenue." Under the current fleet this is almost
+// entirely Stree Shakti. If it ever diverges from [Stree Shakti Tickets]
+// below, something else is issuing free tickets and is worth investigating.
+
+Zero-Fare Ticket % =
+DIVIDE([Zero-Fare Tickets], [Total Tickets])
+
+Top Revenue Route =
+VAR RouteRevenue =
+    ADDCOLUMNS(
+        ALLSELECTED(ticket_facts[route_no]),
+        "@rev", [Total Ticket Revenue]
+    )
+VAR Best = TOPN(1, FILTER(RouteRevenue, [@rev] > 0), [@rev], DESC)
+RETURN
+    IF(
+        ISEMPTY(Best),
+        "No ticket revenue yet",
+        CONCATENATEX(Best, ticket_facts[route_no] & " — ₹" & FORMAT([@rev], "#,0"), ", ")
+    )
+// "Route with highest revenue." Built over ticket_facts[route_no] rather than
+// routes[route_no] so it returns nothing when no tickets exist, instead of
+// naming an arbitrary route at ₹0. The FILTER(> 0) guard matters on day one,
+// when most routes have no sales at all and a plain TOPN would pick whichever
+// route happened to sort first.
+
+Top Revenue Route Amount =
+MAXX(
+    ADDCOLUMNS(ALLSELECTED(ticket_facts[route_no]), "@rev", [Total Ticket Revenue]),
+    [@rev]
+)
+
+Route Revenue Rank =
+RANKX(ALL(ticket_facts[route_no]), [Total Ticket Revenue], , DESC)
+// Put route_no on the rows of a table with this to rank the whole network.
+
+
+// ── 2. THE RECONCILIATION SET (gross / claim / net) ─────────────────────────
+
+Gross Fare Value =
+SUM(ticket_facts[gross_fare])
+// Full tariff value of everything issued, paid or free. This is the honest
+// measure of "how much travel did the platform move".
+
+Stree Shakti Claim =
+SUM(ticket_facts[concession_amount])
+// The reimbursement APSRTC is owed by the Government of Andhra Pradesh for
+// zero-fare tickets. On a leadership dashboard this is arguably the single
+// most useful number the platform produces: it is money the corporation is
+// entitled to and currently has no automated way to evidence per-route.
+
+Revenue Realisation % =
+DIVIDE([Total Ticket Revenue], [Gross Fare Value])
+// Share of full-tariff value collected in cash. On the current fleet this will
+// look alarmingly low, and that is a correct reading, not a bug — see the
+// eligibility note at the bottom of this file.
+
+Reconciliation Check =
+VAR Delta = [Gross Fare Value] - ([Stree Shakti Claim] + [Total Ticket Revenue])
+RETURN IF(ABS(Delta) < 0.01, "✅ Balanced", "⚠ Off by ₹" & FORMAT(Delta, "#,0.00"))
+// gross = claim + net must hold for every slice. Put this on the admin page.
+// If it ever breaks, a fare was edited after issue and the ledger is unsound.
+
+
+// ── 3. PASSENGER COUNTS AND THE GENDER SPLIT ────────────────────────────────
+// Ticket-level, so this is a count of journeys sold, not unique people. Say so
+// on the visual — a leadership audience will otherwise read it as headcount.
+
+Total Passengers Ticketed =
+SUM(ticket_facts[passengers])
+
+Female Passengers =
+CALCULATE(SUM(ticket_facts[passengers]), ticket_facts[gender] = "female")
+
+Male Passengers =
+CALCULATE(SUM(ticket_facts[passengers]), ticket_facts[gender] = "male")
+
+Transgender Passengers =
+CALCULATE(SUM(ticket_facts[passengers]), ticket_facts[gender] = "transgender")
+
+Undeclared Gender Passengers =
+CALCULATE(SUM(ticket_facts[passengers]), ticket_facts[gender] = "unspecified")
+
+Female Passenger % =
+DIVIDE([Female Passengers], [Total Passengers Ticketed])
+
+Concession Passengers =
+SUM(ticket_facts[free_passengers])
+// Heads travelling free. Differs from [Female Passengers] on two counts:
+// mixed-group bookings where only some travellers are eligible, and women
+// booking AC services, who are counted as female but pay.
+
+Paying Passengers =
+SUM(ticket_facts[paying_passengers])
+
+Avg Fare per Paying Passenger =
+DIVIDE([Total Ticket Revenue], [Paying Passengers])
+// The number that actually underwrites the in-bus advertising model — what a
+// fare-paying rider is worth. [Total Ticket Revenue] / [Total Passengers
+// Ticketed] would dilute this with free riders and understate it badly.
+
+Gender Declaration Rate % =
+DIVIDE(
+    [Total Passengers Ticketed] - [Undeclared Gender Passengers],
+    [Total Passengers Ticketed]
+)
+// Data-quality guard. Every gender-split claim made to leadership is only as
+// good as this figure — show it beside any demographic visual. Below ~70% the
+// split is indicative, not evidential, and should be captioned as such.
+
+
+// ── 4. ELIGIBILITY EXPOSURE ─────────────────────────────────────────────────
+
+Eligible Service Tickets =
+CALCULATE([Total Tickets], ticket_facts[service_eligible] = TRUE)
+
+AC Service Tickets =
+CALCULATE([Total Tickets], ticket_facts[ac] = TRUE)
+
+AC Service Revenue =
+CALCULATE([Total Ticket Revenue], ticket_facts[ac] = TRUE)
+
+AC Revenue Share % =
+DIVIDE([AC Service Revenue], [Total Ticket Revenue])
+// Expect this to approach 100% as the Green Metro fleet enters service. If it
+// does, that is the empirical proof of the premium-segment thesis: on a
+// network where 86 of 89 routes are Stree Shakti-eligible, essentially all
+// farebox revenue has to come from the AC services the scheme excludes.
+
+Revenue per Eligible Ticket =
+DIVIDE(
+    CALCULATE([Total Ticket Revenue], ticket_facts[service_eligible] = TRUE),
+    [Eligible Service Tickets]
+)
+// Near ₹0 is the expected value here, and it is the point, not a failure.
+
+
+// ── 5. TREND (needs the Date relationship) ──────────────────────────────────
+
+Ticket Revenue Yesterday =
+CALCULATE([Total Ticket Revenue], DATEADD('Date'[Date], -1, DAY))
+
+Ticket Revenue Change vs Yesterday =
+[Total Ticket Revenue] - [Ticket Revenue Yesterday]
+
+Ticket Revenue — 7 Day Rolling =
+CALCULATE(
+    [Total Ticket Revenue],
+    DATESINPERIOD('Date'[Date], MAX('Date'[Date]), -7, DAY)
+)
+
+Stree Shakti Claim MTD =
+CALCULATE([Stree Shakti Claim], DATESMTD('Date'[Date]))
+// Reimbursement claims are filed monthly, so month-to-date is the natural
+// grain for this one.
+
+
+// ── 6. OPERATIONAL INTEGRITY ────────────────────────────────────────────────
+
+Unverified Payments =
+CALCULATE(
+    [Total Tickets],
+    ticket_facts[payment_verified] = FALSE,
+    ticket_facts[is_zero_fare] = FALSE
+)
+// Paid tickets issued without a bank callback confirming the money arrived.
+// In the current build this is EVERY paid ticket, because the app marks its
+// own payment. Leave this measure on the dashboard as a standing reminder
+// until a payment-provider webhook is wired in — a revenue figure with no
+// settlement behind it should never be presented as collected cash.
+
+Revenue at Risk =
+CALCULATE(
+    [Total Ticket Revenue],
+    ticket_facts[payment_verified] = FALSE,
+    ticket_facts[is_zero_fare] = FALSE
+)
+
+Validated Tickets =
+CALCULATE([Total Tickets], ticket_facts[status] IN { "used", "completed" })
+
+Ticket Utilisation % =
+DIVIDE([Validated Tickets], [Total Tickets])
+// Issued tickets that were actually scanned on board. A persistent gap means
+// either passengers are buying and not travelling, or conductors are not
+// scanning — and those two have opposite operational responses, so pair this
+// with a per-route breakdown before drawing a conclusion.
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// SUGGESTED PAGE — "TICKET REVENUE & RIDERSHIP"
+//
+//   KPI row : Total Ticket Revenue · Gross Fare Value · Stree Shakti Claim ·
+//             Zero-Fare Tickets · Avg Fare per Paying Passenger
+//   Card    : Top Revenue Route
+//   Bar     : Total Ticket Revenue by route_no (top 10)
+//   Stacked : Paying vs Concession Passengers by bus_label
+//   Donut   : Passengers by gender — caption it with Gender Declaration Rate %
+//   Line    : Ticket Revenue — 7 Day Rolling
+//   Table   : route_no | tickets | passengers | free | gross | claim | net
+//   Footer  : Reconciliation Check · Unverified Payments
+//
+// ── A CAVEAT TO PUT ON THE PAGE, NOT JUST IN THIS FILE ─────────────────────
+// 86 of 89 routes in the current network are Stree Shakti-eligible (only 900,
+// 900K and 2047 are not). Ticket revenue and women's ridership are therefore
+// almost disjoint sets by construction. Any deck that shows "revenue by
+// gender" without stating that will read as though women generate no value to
+// the network, which is both wrong and politically indefensible — they
+// generate ridership the State pays for, which is what [Stree Shakti Claim]
+// measures. Present the claim line beside the revenue line, always.
+// ════════════════════════════════════════════════════════════════════════════
